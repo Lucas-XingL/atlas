@@ -1,0 +1,209 @@
+"use client";
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { formatRelative } from "@/lib/utils";
+import type { Source } from "@/lib/types";
+
+export function SourcesPageClient({
+  slug,
+  initial,
+}: {
+  slug: string;
+  initial: Source[];
+}) {
+  const router = useRouter();
+  const [tab, setTab] = React.useState<"add" | "paste">("add");
+  const [url, setUrl] = React.useState("");
+  const [pasteTitle, setPasteTitle] = React.useState("");
+  const [pasteText, setPasteText] = React.useState("");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Poll to pick up status changes while a source is being fetched/summarized.
+  React.useEffect(() => {
+    const hasPending = initial.some(
+      (s) => s.fetch_status === "pending" || s.fetch_status === "fetching" || s.fetch_status === "summarizing"
+    );
+    if (!hasPending) return;
+    const interval = setInterval(() => router.refresh(), 4000);
+    return () => clearInterval(interval);
+  }, [initial, router]);
+
+  async function submit() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const body = tab === "add" ? { url } : { text: pasteText, title: pasteTitle || undefined };
+      const res = await fetch(`/api/atlases/${slug}/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? "提交失败");
+      }
+      setUrl("");
+      setPasteTitle("");
+      setPasteText("");
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "提交失败");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-4xl px-8 py-10 space-y-8">
+      <section>
+        <div className="mb-3 flex gap-4 text-sm">
+          {["add", "paste"].map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setTab(k as "add" | "paste")}
+              className={
+                tab === k
+                  ? "font-medium text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }
+            >
+              {k === "add" ? "URL" : "粘贴文本"}
+            </button>
+          ))}
+        </div>
+        {tab === "add" ? (
+          <div className="flex gap-2">
+            <Input
+              type="url"
+              placeholder="https://..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && url && submit()}
+            />
+            <Button onClick={submit} disabled={submitting || !url}>
+              {submitting ? "处理..." : "Ingest"}
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Input
+              placeholder="标题 (可选)"
+              value={pasteTitle}
+              onChange={(e) => setPasteTitle(e.target.value)}
+            />
+            <Textarea
+              rows={6}
+              placeholder="粘贴正文..."
+              value={pasteText}
+              onChange={(e) => setPasteText(e.target.value)}
+            />
+            <Button onClick={submit} disabled={submitting || pasteText.length < 20}>
+              {submitting ? "处理..." : "保存"}
+            </Button>
+          </div>
+        )}
+        {error ? (
+          <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+            {error}
+          </div>
+        ) : null}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+          Sources ({initial.length})
+        </h2>
+        {initial.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            粘贴一个 URL 开始。
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {initial.map((s) => (
+              <SourceItem key={s.id} source={s} slug={slug} onDelete={() => router.refresh()} />
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; onDelete: () => void }) {
+  async function remove() {
+    if (!confirm("删除这条 source？")) return;
+    await fetch(`/api/atlases/${slug}/sources/${source.id}`, { method: "DELETE" });
+    onDelete();
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <StatusBadge status={source.fetch_status} />
+              <span className="text-[11px] text-muted-foreground">
+                {formatRelative(source.ingested_at)}
+              </span>
+            </div>
+            <div className="mt-2 text-base font-semibold">{source.title}</div>
+            {source.url ? (
+              <a
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 block truncate text-xs text-muted-foreground hover:text-foreground"
+              >
+                {source.url}
+              </a>
+            ) : null}
+            {source.summary?.tl_dr ? (
+              <p className="mt-3 text-sm leading-relaxed text-foreground/90">
+                {source.summary.tl_dr}
+              </p>
+            ) : null}
+            {source.summary?.key_claims && source.summary.key_claims.length > 0 ? (
+              <ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground">
+                {source.summary.key_claims.slice(0, 3).map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            ) : null}
+            {source.fetch_status === "failed" && source.fetch_error ? (
+              <div className="mt-3 rounded border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+                抓取失败：{source.fetch_error}
+              </div>
+            ) : null}
+          </div>
+          <button
+            onClick={remove}
+            className="text-xs text-muted-foreground hover:text-destructive"
+          >
+            删除
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatusBadge({ status }: { status: Source["fetch_status"] }) {
+  const map: Record<Source["fetch_status"], { label: string; variant: "default" | "outline" | "success" }> = {
+    pending: { label: "排队中", variant: "outline" },
+    fetching: { label: "抓取中...", variant: "default" },
+    summarizing: { label: "AI 摘要中...", variant: "default" },
+    ready: { label: "✓ 就绪", variant: "success" },
+    failed: { label: "失败", variant: "outline" },
+  };
+  const { label, variant } = map[status];
+  return <Badge variant={variant}>{label}</Badge>;
+}

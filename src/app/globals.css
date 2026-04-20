@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Light mode fallback (Atlas is primarily dark) */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 262 83% 58%;           /* #8B5CF6 violet */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 262 83% 58%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 262 83% 58%;
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    /* ElevenLabs-inspired: near-black bg, high contrast text, violet accent */
+    --background: 0 0% 4%;              /* near black, #0a0a0a */
+    --foreground: 0 0% 96%;             /* #f4f4f5 */
+    --card: 0 0% 6%;                    /* #0f0f10 */
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 5%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 262 83% 66%;             /* slightly brighter violet on dark */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 10%;
+    --muted-foreground: 0 0% 63%;       /* #a1a1aa */
+    --accent: 262 83% 66%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14%;                 /* subtle #232325 */
+    --input: 0 0% 14%;
+    --ring: 262 83% 66%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::selection {
+    background: hsl(var(--primary) / 0.35);
+  }
+}
+
+/* Subtle noise texture on background (ElevenLabs vibe) */
+.texture-grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.015;
+  z-index: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+/* Prose for markdown readers */
+.prose-atlas {
+  @apply text-foreground;
+}
+.prose-atlas h1 { @apply text-2xl font-semibold mt-6 mb-3; }
+.prose-atlas h2 { @apply text-xl font-semibold mt-5 mb-2; }
+.prose-atlas h3 { @apply text-lg font-semibold mt-4 mb-2; }
+.prose-atlas p  { @apply my-3 leading-relaxed text-foreground/90; }
+.prose-atlas a  { @apply text-primary underline underline-offset-2; }
+.prose-atlas ul { @apply my-3 pl-6 list-disc text-foreground/90; }
+.prose-atlas ol { @apply my-3 pl-6 list-decimal text-foreground/90; }
+.prose-atlas li { @apply my-1; }
+.prose-atlas code { @apply px-1.5 py-0.5 rounded bg-muted text-foreground/90 font-mono text-[0.85em]; }
+.prose-atlas pre  { @apply p-4 my-3 rounded-md bg-muted overflow-x-auto; }
+.prose-atlas pre code { @apply bg-transparent p-0; }
+.prose-atlas blockquote { @apply border-l-2 border-primary pl-4 my-3 text-muted-foreground italic; }
