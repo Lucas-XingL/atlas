@@ -222,7 +222,18 @@ function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; 
                 {formatRelative(source.ingested_at)}
               </span>
             </div>
-            <div className="mt-2 text-base font-semibold">{source.title}</div>
+            <div className="mt-2">
+              {source.fetch_status === "ready" && source.raw_content ? (
+                <a
+                  href={`/app/atlases/${slug}/sources/${source.id}`}
+                  className="text-base font-semibold hover:text-primary"
+                >
+                  {source.title}
+                </a>
+              ) : (
+                <span className="text-base font-semibold">{source.title}</span>
+              )}
+            </div>
             {source.url ? (
               <a
                 href={source.url}
@@ -232,6 +243,19 @@ function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; 
               >
                 {source.url}
               </a>
+            ) : null}
+            {source.fetch_status === "ready" && source.reading_progress > 0 ? (
+              <div className="mt-2 flex items-center gap-2">
+                <div className="h-1 flex-1 max-w-48 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full bg-primary transition-all"
+                    style={{ width: `${source.reading_progress}%` }}
+                  />
+                </div>
+                <span className="text-[11px] tabular-nums text-muted-foreground">
+                  {source.reading_progress}%
+                </span>
+              </div>
             ) : null}
             {source.summary?.why_relevant ? (
               <div className="mt-2 rounded bg-primary/10 px-2 py-1 text-xs text-primary/90">
