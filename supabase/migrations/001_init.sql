@@ -142,10 +142,10 @@ CREATE TRIGGER trg_user_settings_updated BEFORE UPDATE ON user_settings FOR EACH
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION bootstrap_user_settings() RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO user_settings (user_id) VALUES (NEW.id) ON CONFLICT DO NOTHING;
+    INSERT INTO public.user_settings (user_id) VALUES (NEW.id) ON CONFLICT DO NOTHING;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE TRIGGER trg_bootstrap_user_settings
     AFTER INSERT ON auth.users
