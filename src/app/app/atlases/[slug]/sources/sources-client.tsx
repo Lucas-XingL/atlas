@@ -60,64 +60,88 @@ export function SourcesPageClient({
     }
   }
 
+  const [manualOpen, setManualOpen] = React.useState(false);
+
   return (
     <div className="mx-auto max-w-4xl px-8 py-10 space-y-8">
       <section>
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex gap-4 text-sm">
-            {["add", "paste"].map((k) => (
-              <button
-                key={k}
-                type="button"
-                onClick={() => setTab(k as "add" | "paste")}
-                className={
-                  tab === k
-                    ? "font-medium text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }
-              >
-                {k === "add" ? "URL" : "粘贴文本"}
-              </button>
-            ))}
+        <a
+          href={`/app/atlases/${slug}/kickstart`}
+          className="group flex items-center justify-between rounded-lg border border-primary/40 bg-primary/10 p-5 transition-colors hover:bg-primary/15"
+        >
+          <div>
+            <div className="flex items-center gap-2 text-base font-semibold text-primary">
+              ✨ AI 推源
+            </div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              让 AI 基于你的 thesis 搜 8-12 篇入门材料并分档
+            </div>
           </div>
-          <a
-            href={`/app/atlases/${slug}/kickstart`}
-            className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/20"
-          >
-            ✨ AI 推源
-          </a>
-        </div>
-        {tab === "add" ? (
-          <div className="flex gap-2">
-            <Input
-              type="url"
-              placeholder="https://..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && url && submit()}
-            />
-            <Button onClick={submit} disabled={submitting || !url}>
-              {submitting ? "处理..." : "Ingest"}
-            </Button>
+          <div className="text-primary opacity-60 transition-opacity group-hover:opacity-100">
+            →
           </div>
-        ) : (
-          <div className="space-y-2">
-            <Input
-              placeholder="标题 (可选)"
-              value={pasteTitle}
-              onChange={(e) => setPasteTitle(e.target.value)}
-            />
-            <Textarea
-              rows={6}
-              placeholder="粘贴正文..."
-              value={pasteText}
-              onChange={(e) => setPasteText(e.target.value)}
-            />
-            <Button onClick={submit} disabled={submitting || pasteText.length < 20}>
-              {submitting ? "处理..." : "保存"}
-            </Button>
+        </a>
+
+        <button
+          type="button"
+          onClick={() => setManualOpen((v) => !v)}
+          className="mt-3 text-xs text-muted-foreground hover:text-foreground"
+        >
+          {manualOpen ? "▾" : "▸"} 手动添加（URL / 粘贴文本）
+        </button>
+
+        {manualOpen ? (
+          <div className="mt-3 rounded-lg border border-border bg-card/40 p-4">
+            <div className="mb-3 flex gap-4 text-sm">
+              {["add", "paste"].map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setTab(k as "add" | "paste")}
+                  className={
+                    tab === k
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  }
+                >
+                  {k === "add" ? "URL" : "粘贴文本"}
+                </button>
+              ))}
+            </div>
+            {tab === "add" ? (
+              <div className="flex gap-2">
+                <Input
+                  type="url"
+                  placeholder="https://..."
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && url && submit()}
+                />
+                <Button onClick={submit} disabled={submitting || !url}>
+                  {submitting ? "处理..." : "Ingest"}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Input
+                  placeholder="标题 (可选)"
+                  value={pasteTitle}
+                  onChange={(e) => setPasteTitle(e.target.value)}
+                />
+                <Textarea
+                  rows={6}
+                  placeholder="粘贴正文..."
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                />
+                <Button onClick={submit} disabled={submitting || pasteText.length < 20}>
+                  {submitting ? "处理..." : "保存"}
+                </Button>
+              </div>
+            )}
           </div>
-        )}
+        ) : null}
+
         {error ? (
           <div className="mt-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
             {error}
@@ -131,7 +155,7 @@ export function SourcesPageClient({
         </h2>
         {initial.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            粘贴一个 URL 开始。
+            还没有 source。点上面「✨ AI 推源」让 AI 帮你找一批。
           </div>
         ) : (
           <div className="space-y-3">

@@ -1,39 +1,23 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { decodeSlug } from "@/lib/slug";
 import { resolveLlmConfig } from "@/lib/ai/resolve-config";
-import { searchAndRank } from "@/lib/ai/kickstart";
+import { generateKickstartQueries } from "@/lib/ai/kickstart";
 import type { Atlas } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
-
-const schema = z.object({
-  queries: z.array(z.string().min(1).max(200)).min(1).max(6),
-});
+export const maxDuration = 60;
 
 /**
- * Step 2: given queries from the client, run Brave search + LLM ranking.
- * Returns: { candidates: KickstartCandidate[] }
+ * Step 1: LLM drafts search queries (fast, ~3-5s).
+ * Returns: { queries: string[] }
  */
-export async function POST(request: Request, { params }: { params: { slug: string } }) {
+export async function POST(_req: Request, { params }: { params: { slug: string } }) {
   const supabase = createSupabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const braveKey = process.env.BRAVE_API_KEY;
-  if (!braveKey) {
-    return NextResponse.json({ error: "BRAVE_API_KEY not configured" }, { status: 500 });
-  }
-
-  const body = await request.json().catch(() => null);
-  const parsed = schema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
-  }
 
   const { data: atlas } = await supabase
     .from("atlases")
@@ -45,11 +29,11 @@ export async function POST(request: Request, { params }: { params: { slug: strin
   const llm = await resolveLlmConfig(supabase, user.id);
 
   try {
-    const candidates = await searchAndRank(llm, braveKey, atlas, parsed.data.queries);
-    return NextResponse.json({ candidates });
+    const queries = await generateKickstartQueries(llm, atlas);
+    return NextResponse.json({ queries });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.error("[kickstart/search] failed", { atlas: atlas.id, err: message });
+    console.error("[kickstart/queries] failed", { atlas: atlas.id, err: message });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
