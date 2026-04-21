@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServer } from "@/lib/supabase/server";
+import { decodeSlug } from "@/lib/slug";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,7 @@ async function resolveAtlas(
   supabase: ReturnType<typeof createSupabaseServer>,
   slug: string
 ) {
-  const { data } = await supabase.from("atlases").select("id, user_id").eq("slug", slug).maybeSingle();
+  const { data } = await supabase.from("atlases").select("id, user_id").eq("slug", decodeSlug(slug)).maybeSingle();
   return data;
 }
 

@@ -6,12 +6,17 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function slugify(input: string): string {
-  return input
+  const ascii = input
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 60);
+  // If the name is mostly non-ASCII (Chinese etc.), fall back to a short random id
+  if (ascii.length < 2) {
+    return "atlas-" + Math.random().toString(36).slice(2, 8);
+  }
+  return ascii;
 }
 
 export function formatRelative(iso: string): string {

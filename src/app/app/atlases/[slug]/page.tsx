@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createSupabaseServer } from "@/lib/supabase/server";
+import { decodeSlug } from "@/lib/slug";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import ReactMarkdown from "react-markdown";
@@ -10,11 +11,12 @@ export default async function AtlasDashboard({
 }: {
   params: { slug: string };
 }) {
+  const slug = decodeSlug(params.slug);
   const supabase = createSupabaseServer();
   const { data: atlas } = await supabase
     .from("atlases")
     .select("id")
-    .eq("slug", params.slug)
+    .eq("slug", slug)
     .single();
   if (!atlas) return null;
 

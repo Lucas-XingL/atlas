@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServer, createSupabaseServiceRole } from "@/lib/supabase/server";
+import { decodeSlug } from "@/lib/slug";
 import { resolveLlmConfig } from "@/lib/ai/resolve-config";
 import { fetchWebArticle, detectSourceType } from "@/lib/fetch/web";
 import { summarizeSource } from "@/lib/ai/summarize";
@@ -15,7 +16,7 @@ const postSchema = z.union([
 
 export async function GET(_req: Request, { params }: { params: { slug: string } }) {
   const supabase = createSupabaseServer();
-  const { data: atlas } = await supabase.from("atlases").select("id").eq("slug", params.slug).maybeSingle();
+  const { data: atlas } = await supabase.from("atlases").select("id").eq("slug", decodeSlug(params.slug)).maybeSingle();
   if (!atlas) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const { data, error } = await supabase
@@ -35,7 +36,7 @@ export async function POST(request: Request, { params }: { params: { slug: strin
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const { data: atlas } = await supabase.from("atlases").select("id").eq("slug", params.slug).maybeSingle();
+  const { data: atlas } = await supabase.from("atlases").select("id").eq("slug", decodeSlug(params.slug)).maybeSingle();
   if (!atlas) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const body = await request.json().catch(() => null);

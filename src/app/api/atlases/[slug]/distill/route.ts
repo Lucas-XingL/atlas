@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase/server";
+import { decodeSlug } from "@/lib/slug";
 import { resolveLlmConfig } from "@/lib/ai/resolve-config";
 import { distillJournal, type DistillInputEntry } from "@/lib/ai/distill";
 import type { Atlas, Flashcard } from "@/lib/types";
@@ -21,7 +22,7 @@ export async function POST(_req: Request, { params }: { params: { slug: string }
   const { data: atlas } = await supabase
     .from("atlases")
     .select("id, name, thesis")
-    .eq("slug", params.slug)
+    .eq("slug", decodeSlug(params.slug))
     .single<Pick<Atlas, "id" | "name" | "thesis">>();
   if (!atlas) return NextResponse.json({ error: "not found" }, { status: 404 });
 

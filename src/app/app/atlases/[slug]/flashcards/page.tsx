@@ -1,15 +1,17 @@
 import Link from "next/link";
 import { createSupabaseServer } from "@/lib/supabase/server";
+import { decodeSlug } from "@/lib/slug";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 export default async function FlashcardsPage({ params }: { params: { slug: string } }) {
+  const slug = decodeSlug(params.slug);
   const supabase = createSupabaseServer();
   const { data: atlas } = await supabase
     .from("atlases")
     .select("id")
-    .eq("slug", params.slug)
+    .eq("slug", slug)
     .single();
   if (!atlas) return null;
 

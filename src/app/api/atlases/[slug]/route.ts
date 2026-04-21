@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServer } from "@/lib/supabase/server";
+import { decodeSlug } from "@/lib/slug";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: { slug: string } 
   const { data, error } = await supabase
     .from("atlases")
     .select("*")
-    .eq("slug", params.slug)
+    .eq("slug", decodeSlug(params.slug))
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 });
@@ -33,7 +34,7 @@ export async function PATCH(request: Request, { params }: { params: { slug: stri
   const { data, error } = await supabase
     .from("atlases")
     .update(parsed.data)
-    .eq("slug", params.slug)
+    .eq("slug", decodeSlug(params.slug))
     .select()
     .single();
 
@@ -46,7 +47,7 @@ export async function DELETE(_req: Request, { params }: { params: { slug: string
   const { error } = await supabase
     .from("atlases")
     .update({ status: "archived" })
-    .eq("slug", params.slug);
+    .eq("slug", decodeSlug(params.slug));
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });
 }
