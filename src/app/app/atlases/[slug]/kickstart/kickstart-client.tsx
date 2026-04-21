@@ -388,7 +388,7 @@ export function KickstartClient({
               {allFinished ? (
                 <Button
                   onClick={() => {
-                    router.push(`/app/atlases/${slug}/sources`);
+                    router.push(`/app/atlases/${slug}/reading`);
                     router.refresh();
                   }}
                 >

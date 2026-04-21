@@ -152,10 +152,10 @@ export function SourceReaderClient({
     <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-8 lg:py-8">
       <header className="mb-6 flex items-center justify-between gap-4">
         <Link
-          href={`/app/atlases/${slug}/sources`}
+          href={`/app/atlases/${slug}/reading`}
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
-          <ArrowLeft className="h-4 w-4" /> 返回来源列表
+          <ArrowLeft className="h-4 w-4" /> 返回阅读清单
         </Link>
         <div className="flex items-center gap-2">
           <div className="text-xs tabular-nums text-muted-foreground">
@@ -282,10 +282,10 @@ function EmptyContentHint({ slug, source }: { slug: string; source: Source }) {
           : "（可能是抓取失败）"}
       </div>
       <Link
-        href={`/app/atlases/${slug}/sources`}
+        href={`/app/atlases/${slug}/reading`}
         className="mt-3 inline-block text-sm text-primary hover:underline"
       >
-        回到列表 · 点「粘贴正文」
+        回到阅读清单 · 点「粘贴正文」
       </Link>
     </div>
   );

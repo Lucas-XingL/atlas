@@ -31,6 +31,7 @@ export type SourceStatus = "unread" | "reading" | "read" | "dismissed";
 export type SourceType = "web" | "text" | "pdf" | "video" | "arxiv";
 export type ResourceType = "consumable" | "external" | "physical";
 export type FetchStatus = "pending" | "fetching" | "summarizing" | "ready" | "failed";
+export type SourceOrigin = "path" | "subscription" | "manual";
 
 export interface SourceSummary {
   tl_dr?: string;
@@ -51,6 +52,8 @@ export interface Source {
   resource_type: ResourceType;
   path_resource_id: string | null;
   reading_progress: number;
+  origin: SourceOrigin;
+  origin_ref: string | null;
   raw_content: string | null;
   summary: SourceSummary;
   status: SourceStatus;
@@ -193,4 +196,51 @@ export interface UserSettings {
   email_push_enabled: boolean;
   created_at: string;
   updated_at: string;
+}
+
+// --- v3: source pipelines ---
+
+export type SubscriptionSchedule = "hourly" | "daily";
+
+export interface Subscription {
+  id: string;
+  atlas_id: string;
+  user_id: string;
+  feed_url: string;
+  title: string;
+  site_url: string | null;
+  fetch_schedule: SubscriptionSchedule;
+  is_active: boolean;
+  last_fetched_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type SubscriptionItemStatus = "new" | "in_pool" | "skipped";
+
+export interface SubscriptionItem {
+  id: string;
+  subscription_id: string;
+  user_id: string;
+  external_id: string;
+  title: string;
+  url: string | null;
+  author: string | null;
+  published_at: string | null;
+  summary_preview: string | null;
+  user_status: SubscriptionItemStatus;
+  source_id: string | null;
+  fetched_at: string;
+}
+
+export interface ManualCandidate {
+  id: string;
+  atlas_id: string;
+  user_id: string;
+  url: string | null;
+  text_snippet: string | null;
+  title: string;
+  note: string | null;
+  created_at: string;
 }

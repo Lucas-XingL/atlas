@@ -230,7 +230,7 @@ function ResourceRow({
       const res = await fetch(`/api/path-resources/${r.id}/accept`, { method: "POST" });
       const j = await res.json();
       if (res.ok && j.source_id) {
-        window.location.href = `/app/atlases/${slug}/sources`;
+        window.location.href = `/app/atlases/${slug}/reading`;
       } else {
         alert(`开始失败: ${j.error ?? "未知错误"}`);
         onChange();
@@ -355,7 +355,7 @@ function ResourceRow({
         ) : null}
         {r.source_id ? (
           <a
-            href={`/app/atlases/${slug}/sources`}
+            href={`/app/atlases/${slug}/reading`}
             className="rounded border border-border bg-background px-2 py-1 text-[11px] hover:border-foreground/40"
           >
             查看

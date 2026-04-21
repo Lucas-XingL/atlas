@@ -11,7 +11,8 @@ export function AtlasTabs({ slug }: { slug: string }) {
   const tabs = [
     { href: base, label: "概览" },
     { href: `${base}/path`, label: "路径" },
-    { href: `${base}/sources`, label: "来源" },
+    { href: `${base}/recommendations`, label: "内容推荐" },
+    { href: `${base}/reading`, label: "阅读清单" },
     { href: `${base}/journal`, label: "随记" },
     { href: `${base}/flashcards`, label: "卡片" },
   ];
