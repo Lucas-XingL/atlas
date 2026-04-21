@@ -60,36 +60,56 @@ export async function chat(
 ): Promise<string> {
   const { provider, api_key } = creds;
   const timeoutMs = options.timeout_ms ?? DEFAULT_TIMEOUT;
+  const maxAttempts = 3;
 
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), timeoutMs);
+  let lastError: Error | null = null;
 
-  try {
-    const { url, body, headers } = buildRequest(provider, api_key, model, messages, options, creds);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
+    try {
+      const { url, body, headers } = buildRequest(provider, api_key, model, messages, options, creds);
 
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      throw new Error(
-        `LLM ${provider} http ${res.status}: ${errText.slice(0, 400)}`
-      );
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        const retriable = res.status === 429 || res.status === 502 || res.status === 503 || res.status === 529;
+        if (retriable && attempt < maxAttempts) {
+          lastError = new Error(`LLM ${provider} http ${res.status} (attempt ${attempt})`);
+          clearTimeout(t);
+          await new Promise((r) => setTimeout(r, 2000 * attempt));
+          continue;
+        }
+        throw new Error(`LLM ${provider} http ${res.status}: ${errText.slice(0, 400)}`);
+      }
+
+      const json = (await res.json()) as OpenAiChatResponse;
+      const content = json.choices?.[0]?.message?.content;
+      if (!content) {
+        throw new Error(`LLM ${provider} returned no content`);
+      }
+      return content;
+    } catch (err) {
+      if (attempt < maxAttempts && err instanceof Error && err.name === "AbortError") {
+        lastError = err;
+        clearTimeout(t);
+        continue;
+      }
+      clearTimeout(t);
+      throw err;
+    } finally {
+      clearTimeout(t);
     }
-
-    const json = (await res.json()) as OpenAiChatResponse;
-    const content = json.choices?.[0]?.message?.content;
-    if (!content) {
-      throw new Error(`LLM ${provider} returned no content`);
-    }
-    return content;
-  } finally {
-    clearTimeout(t);
   }
+
+  throw lastError ?? new Error("LLM chat exhausted retries");
 }
 
 function buildRequest(

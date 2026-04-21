@@ -155,6 +155,6 @@ export async function generateWeeklyDigest(
       { role: "system", content: DIGEST_SYSTEM },
       { role: "user", content: userMsg },
     ],
-    { temperature: 0.6, max_tokens: 800, timeout_ms: 90_000 }
+    { temperature: 0.6, max_tokens: 1800, timeout_ms: 120_000 }
   );
 }
