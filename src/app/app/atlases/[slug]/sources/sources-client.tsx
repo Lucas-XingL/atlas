@@ -63,21 +63,29 @@ export function SourcesPageClient({
   return (
     <div className="mx-auto max-w-4xl px-8 py-10 space-y-8">
       <section>
-        <div className="mb-3 flex gap-4 text-sm">
-          {["add", "paste"].map((k) => (
-            <button
-              key={k}
-              type="button"
-              onClick={() => setTab(k as "add" | "paste")}
-              className={
-                tab === k
-                  ? "font-medium text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }
-            >
-              {k === "add" ? "URL" : "粘贴文本"}
-            </button>
-          ))}
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex gap-4 text-sm">
+            {["add", "paste"].map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setTab(k as "add" | "paste")}
+                className={
+                  tab === k
+                    ? "font-medium text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }
+              >
+                {k === "add" ? "URL" : "粘贴文本"}
+              </button>
+            ))}
+          </div>
+          <a
+            href={`/app/atlases/${slug}/kickstart`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1 text-xs font-medium text-primary hover:bg-primary/20"
+          >
+            ✨ AI 推源
+          </a>
         </div>
         {tab === "add" ? (
           <div className="flex gap-2">
@@ -151,6 +159,9 @@ function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <StatusBadge status={source.fetch_status} />
+              {source.ai_recommended ? (
+                <Badge variant="default">✨ AI 推荐</Badge>
+              ) : null}
               <span className="text-[11px] text-muted-foreground">
                 {formatRelative(source.ingested_at)}
               </span>
@@ -165,6 +176,11 @@ function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; 
               >
                 {source.url}
               </a>
+            ) : null}
+            {source.summary?.why_relevant ? (
+              <div className="mt-2 rounded bg-primary/10 px-2 py-1 text-xs text-primary/90">
+                💡 {source.summary.why_relevant}
+              </div>
             ) : null}
             {source.summary?.tl_dr ? (
               <p className="mt-3 text-sm leading-relaxed text-foreground/90">

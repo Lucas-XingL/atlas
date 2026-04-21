@@ -25,6 +25,7 @@ export interface SourceSummary {
   tl_dr?: string;
   key_claims?: string[];
   quotes?: Array<{ text: string; note?: string }>;
+  why_relevant?: string;
 }
 
 export interface Source {

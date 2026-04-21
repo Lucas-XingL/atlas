@@ -29,7 +29,7 @@ export function NewAtlasForm() {
         throw new Error(body.error ?? "创建失败");
       }
       const { atlas } = await res.json();
-      router.push(`/app/atlases/${atlas.slug}`);
+      router.push(`/app/atlases/${atlas.slug}/kickstart`);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "未知错误");
