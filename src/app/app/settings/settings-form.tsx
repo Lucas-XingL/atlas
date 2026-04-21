@@ -11,9 +11,9 @@ type InitialSettings = (UserSettings & { llm_api_key: string | null }) | null;
 
 const MODEL_DEFAULTS: Record<LlmProvider, { quality: string; fast: string; hint: string }> = {
   zhipu: {
-    quality: "glm-5.1",
-    fast: "glm-4.7-flashx",
-    hint: "智谱 GLM · 默认用 glm-5.1 做提炼和周报，glm-4.7-flashx 做摘要",
+    quality: "glm-4.7-flash",
+    fast: "glm-4.5-flash",
+    hint: "智谱 GLM · 默认用免费 flash 系列。升级到 glm-5.1 / glm-4.7 需充值",
   },
   minimax: {
     quality: "MiniMax-M2.7",

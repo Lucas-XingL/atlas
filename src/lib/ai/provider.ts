@@ -29,7 +29,9 @@ export function defaultModels(provider: LlmProvider): ModelChoice {
   if (provider === "minimax") {
     return { quality: "MiniMax-M2.7", fast: "MiniMax-M2.7-highspeed" };
   }
-  return { quality: "glm-5.1", fast: "glm-4.7-flashx" };
+  // Zhipu: default to free tiers so new users can try the app without paying.
+  // Paid users can swap to glm-5.1 / glm-4.7 in Settings.
+  return { quality: "glm-4.7-flash", fast: "glm-4.5-flash" };
 }
 
 const DEFAULT_TIMEOUT = 90_000;
@@ -139,6 +141,9 @@ function buildRequest(
       // GLM supports response_format { type: 'json_object' } on capable models.
       body.response_format = { type: "json_object" };
     }
+    // Zhipu 4.x/5.x flash variants default to thinking-mode and burn the entire
+    // max_tokens budget on reasoning_content, leaving content empty. Disable it.
+    body.thinking = { type: "disabled" };
     return {
       url: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
       body,
