@@ -22,7 +22,7 @@ export default async function PathNewPage({ params }: { params: { slug: string }
     .eq("is_active", true)
     .maybeSingle();
   if (existing) {
-    redirect(`/app/atlases/${atlas.slug}/path`);
+    redirect(`/app/atlases/${atlas.slug}/recommendations?tab=plan`);
   }
 
   return <PathNewClient slug={atlas.slug} name={atlas.name} thesis={atlas.thesis} />;

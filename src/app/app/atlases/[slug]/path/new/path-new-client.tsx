@@ -46,7 +46,7 @@ export function PathNewClient({
       if (!res.ok) throw new Error(j.error ?? "generate failed");
       setPhase("done");
       setTimeout(() => {
-        router.push(`/app/atlases/${slug}/path`);
+        router.push(`/app/atlases/${slug}/recommendations?tab=plan`);
         router.refresh();
       }, 500);
     } catch (err) {
