@@ -2,6 +2,15 @@
 
 export type AtlasStatus = "active" | "archived";
 
+export type KnowledgeDomain =
+  | "tech"
+  | "finance"
+  | "art"
+  | "science"
+  | "practical"
+  | "humanities"
+  | "other";
+
 export interface Atlas {
   id: string;
   user_id: string;
@@ -12,6 +21,7 @@ export interface Atlas {
   scope_in: string[];
   scope_out: string[];
   framework: Record<string, unknown>;
+  knowledge_domain: KnowledgeDomain | null;
   status: AtlasStatus;
   created_at: string;
   updated_at: string;
@@ -19,6 +29,7 @@ export interface Atlas {
 
 export type SourceStatus = "unread" | "reading" | "read" | "dismissed";
 export type SourceType = "web" | "text" | "pdf" | "video" | "arxiv";
+export type ResourceType = "consumable" | "external" | "physical";
 export type FetchStatus = "pending" | "fetching" | "summarizing" | "ready" | "failed";
 
 export interface SourceSummary {
@@ -37,6 +48,9 @@ export interface Source {
   author: string | null;
   pub_date: string | null;
   source_type: SourceType;
+  resource_type: ResourceType;
+  path_resource_id: string | null;
+  reading_progress: number;
   raw_content: string | null;
   summary: SourceSummary;
   status: SourceStatus;
@@ -104,6 +118,67 @@ export interface DigestSnapshot {
 }
 
 export type LlmProvider = "zhipu" | "minimax";
+
+export type PathResourceTier = "core" | "extra";
+export type PathResourceUserStatus =
+  | "suggested"
+  | "accepted"
+  | "reading"
+  | "finished"
+  | "skipped";
+
+export interface PathResource {
+  id: string;
+  stage_id: string;
+  res_order: number;
+  tier: PathResourceTier;
+  resource_type: ResourceType;
+  title: string;
+  url: string | null;
+  author: string | null;
+  why_relevant: string | null;
+  search_hint: string | null;
+  source_id: string | null;
+  user_status: PathResourceUserStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PathStage {
+  id: string;
+  path_id: string;
+  stage_order: number;
+  name: string;
+  intent: string | null;
+  est_duration: string | null;
+  created_at: string;
+  resources: PathResource[];
+}
+
+export interface LearningPath {
+  id: string;
+  atlas_id: string;
+  user_id: string;
+  version: number;
+  overview: string | null;
+  knowledge_domain: KnowledgeDomain | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  stages: PathStage[];
+}
+
+export interface Highlight {
+  id: string;
+  source_id: string;
+  user_id: string;
+  text: string;
+  note: string | null;
+  start_offset: number;
+  end_offset: number;
+  journal_entry_id: string | null;
+  created_at: string;
+}
 
 export interface UserSettings {
   user_id: string;
