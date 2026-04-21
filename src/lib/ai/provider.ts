@@ -29,9 +29,9 @@ export function defaultModels(provider: LlmProvider): ModelChoice {
   if (provider === "minimax") {
     return { quality: "MiniMax-M2.7", fast: "MiniMax-M2.7-highspeed" };
   }
-  // Zhipu: default to free tiers so new users can try the app without paying.
-  // Paid users can swap to glm-5.1 / glm-4.7 in Settings.
-  return { quality: "glm-4.7-flash", fast: "glm-4.5-flash" };
+  // Zhipu: glm-4.7 is the sweet spot — strong enough for distill/digest,
+  // and eligible for the default 2M-token package on verified accounts.
+  return { quality: "glm-4.7", fast: "glm-4.7" };
 }
 
 const DEFAULT_TIMEOUT = 90_000;
