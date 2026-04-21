@@ -8,11 +8,12 @@ MVP code scaffolded (Next.js 14 + Supabase + GLM/MiniMax). Awaiting your Vercel 
 
 ## Design Docs
 
-1. [PRD v2](docs/PRD-v2.md) — **当前版本**。加入 LearningPath + Source 消费闭环 + 高亮
-2. [PRD v1](docs/PRD-v1.md) — v1 基线（已实现，作参考）
-3. [WIREFRAMES](docs/WIREFRAMES.md) — UI 线框（v1）
-4. [DATA-FLOW](docs/DATA-FLOW.md) — 关键流程时序（v1）
-5. [IMPLEMENTATION-PLAN](docs/IMPLEMENTATION-PLAN.md) — 3 周 MVP 实现计划（v1，已完成）
+1. [PRD v3](docs/PRD-v3.md) — **当前版本**. 三管道 × 阅读池
+2. [PRD v2](docs/PRD-v2.md) — v2 LearningPath + Highlight (已实现)
+3. [PRD v1](docs/PRD-v1.md) — v1 基线 (已实现)
+4. [WIREFRAMES](docs/WIREFRAMES.md) — UI 线框 (v1)
+5. [DATA-FLOW](docs/DATA-FLOW.md) — 关键流程时序 (v1)
+6. [IMPLEMENTATION-PLAN](docs/IMPLEMENTATION-PLAN.md) — 3 周 MVP 实现计划 (v1, 已完成)
 
 ## Stack
 
