@@ -77,7 +77,7 @@ export async function summarizePastedText(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { data: src, error: fetchErr } = await supabase
     .from("sources")
-    .select("id, url, title, summary")
+    .select("id, url, title, summary, path_resource_id")
     .eq("id", sourceId)
     .maybeSingle();
 
@@ -109,8 +109,22 @@ export async function summarizePastedText(
 
     await supabase
       .from("sources")
-      .update({ summary: mergedSummary, fetch_status: "ready", fetch_error: null })
+      .update({
+        summary: mergedSummary,
+        fetch_status: "ready",
+        fetch_error: null,
+        status: "reading",
+      })
       .eq("id", sourceId);
+
+    // Bump the linked path resource from 'accepted' to 'reading' now that there's real content.
+    if (src.path_resource_id) {
+      await supabase
+        .from("path_resources")
+        .update({ user_status: "reading" })
+        .eq("id", src.path_resource_id)
+        .eq("user_status", "accepted");
+    }
 
     return { ok: true };
   } catch (err) {

@@ -214,7 +214,7 @@ function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; 
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <StatusBadge status={source.fetch_status} />
+              <StatusBadge source={source} />
               {source.ai_recommended ? (
                 <Badge variant="default">✨ AI 推荐</Badge>
               ) : null}
@@ -274,6 +274,29 @@ function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; 
                 ))}
               </ul>
             ) : null}
+
+            {/* Needs-paste state: source has no URL or is external/physical */}
+            {source.fetch_status === "pending" && !source.url ? (
+              <div className="mt-3 space-y-2">
+                <div className="rounded border border-primary/30 bg-primary/5 p-3 text-xs text-foreground/90">
+                  {pasteHint(source.resource_type)}
+                </div>
+                <Textarea
+                  rows={6}
+                  placeholder="粘贴章节要点 / 核心观点 / 摘抄（≥20 字）..."
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                />
+                <Button
+                  size="sm"
+                  onClick={submitPaste}
+                  disabled={busy || pasteText.trim().length < 20}
+                >
+                  {busy ? "处理..." : "保存并生成摘要"}
+                </Button>
+              </div>
+            ) : null}
+
             {source.fetch_status === "failed" && source.fetch_error ? (
               <div className="mt-3 space-y-2">
                 <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
@@ -326,7 +349,11 @@ function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; 
   );
 }
 
-function StatusBadge({ status }: { status: Source["fetch_status"] }) {
+function StatusBadge({ source }: { source: Pick<Source, "fetch_status" | "resource_type" | "url"> }) {
+  const needsPaste = source.fetch_status === "pending" && !source.url;
+  if (needsPaste) {
+    return <Badge variant="default">待粘贴正文</Badge>;
+  }
   const map: Record<Source["fetch_status"], { label: string; variant: "default" | "outline" | "success" }> = {
     pending: { label: "排队中", variant: "outline" },
     fetching: { label: "抓取中...", variant: "default" },
@@ -334,6 +361,16 @@ function StatusBadge({ status }: { status: Source["fetch_status"] }) {
     ready: { label: "✓ 就绪", variant: "success" },
     failed: { label: "失败", variant: "outline" },
   };
-  const { label, variant } = map[status];
+  const { label, variant } = map[source.fetch_status];
   return <Badge variant={variant}>{label}</Badge>;
+}
+
+function pasteHint(type: Source["resource_type"]): string {
+  if (type === "physical") {
+    return "📖 实体书 · 读完后把章节要点粘到这里，AI 会帮你整理成摘要 + 归档到知识库。无需粘整本，几句核心观点即可。";
+  }
+  if (type === "external") {
+    return "🎧 需外部消化（视频 / 播客 / 付费文章）· 看完后把要点粘过来，AI 会帮你整理。";
+  }
+  return "📝 这条源没有可抓取的 URL · 粘贴原文或要点，AI 会自动生成摘要。";
 }
