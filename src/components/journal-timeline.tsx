@@ -56,11 +56,11 @@ export function JournalTimeline({ initialEntries }: { initialEntries: JournalEnt
                 <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span>{formatRelative(e.created_at)}</span>
                   {e.status === "distilled" ? (
-                    <Badge variant="success">✨ distilled</Badge>
+                    <Badge variant="success">✨ 已提炼</Badge>
                   ) : e.status === "archived" ? (
-                    <Badge variant="outline">archived</Badge>
+                    <Badge variant="outline">已归档</Badge>
                   ) : (
-                    <Badge variant="outline">pending</Badge>
+                    <Badge variant="outline">待提炼</Badge>
                   )}
                 </div>
               </li>

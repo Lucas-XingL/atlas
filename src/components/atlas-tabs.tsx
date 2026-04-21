@@ -9,10 +9,10 @@ export function AtlasTabs({ slug }: { slug: string }) {
   const base = `/app/atlases/${slug}`;
 
   const tabs = [
-    { href: base, label: "Dashboard" },
-    { href: `${base}/sources`, label: "Sources" },
-    { href: `${base}/journal`, label: "Journal" },
-    { href: `${base}/flashcards`, label: "Flashcards" },
+    { href: base, label: "概览" },
+    { href: `${base}/sources`, label: "来源" },
+    { href: `${base}/journal`, label: "随记" },
+    { href: `${base}/flashcards`, label: "卡片" },
   ];
 
   return (

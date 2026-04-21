@@ -16,7 +16,7 @@ export function DistillButton({ slug, rawCount }: { slug: string; rawCount: numb
       const res = await fetch(`/api/atlases/${slug}/distill`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "failed");
-      setMsg(`新增 ${json.cards} 张 · archived ${json.archived} 条`);
+      setMsg(`新增 ${json.cards} 张 · 归档 ${json.archived} 条`);
       router.refresh();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : "失败");

@@ -41,7 +41,7 @@ export default async function FlashcardsPage({ params }: { params: { slug: strin
 
       {!cards || cards.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          还没有 flashcard。每晚 3am AI 会从你的 journal 提炼。
+          还没有卡片。每晚 3:00 AI 会从你的随记提炼。
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -51,9 +51,9 @@ export default async function FlashcardsPage({ params }: { params: { slug: strin
                 <div className="text-sm font-medium">{c.front}</div>
                 <div className="mt-2 text-xs text-muted-foreground">{c.back}</div>
                 <div className="mt-3 flex items-center gap-2">
-                  <Badge variant="outline">{c.stage}</Badge>
+                  <Badge variant="outline">{STAGE_LABEL[c.stage] ?? c.stage}</Badge>
                   <span className="text-[11px] text-muted-foreground">
-                    maturity {c.maturity}/10 · next{" "}
+                    熟悉度 {c.maturity}/10 · 下次{" "}
                     {new Date(c.next_review_at).toLocaleDateString("zh-CN")}
                   </span>
                 </div>
@@ -65,3 +65,10 @@ export default async function FlashcardsPage({ params }: { params: { slug: strin
     </div>
   );
 }
+
+const STAGE_LABEL: Record<string, string> = {
+  new: "新",
+  learning: "学习中",
+  review: "复习中",
+  mastered: "已掌握",
+};

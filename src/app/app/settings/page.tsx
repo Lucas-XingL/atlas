@@ -25,7 +25,7 @@ export default async function SettingsPage() {
     <div className="mx-auto max-w-2xl px-8 py-10">
       <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        LLM 厂商、API key、时区、晨间推送。
+        模型厂商、API key、时区、晨间推送。
       </p>
       <div className="mt-8">
         <SettingsForm initial={safe} />

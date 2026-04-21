@@ -41,7 +41,7 @@ export default async function AtlasDashboard({
       {/* Today's cards */}
       <section>
         <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-          Today
+          今日
         </h2>
         {dueCards && dueCards.length > 0 ? (
           <Card>
@@ -64,7 +64,7 @@ export default async function AtlasDashboard({
           </Card>
         ) : (
           <div className="rounded-lg border border-border/60 bg-card/40 p-5 text-sm text-muted-foreground">
-            今天没有需要复习的卡片。去 Journal 写点什么吧。
+            今天没有需要复习的卡片。去随记写点什么吧。
           </div>
         )}
       </section>
@@ -75,9 +75,9 @@ export default async function AtlasDashboard({
           本周
         </h2>
         <div className="grid grid-cols-3 gap-3">
-          <Stat label="Journal" value={journal_count ?? 0} suffix="条" />
-          <Stat label="Flashcards" value={flashcard_count ?? 0} suffix="张 new" />
-          <Stat label="Sources" value={source_count ?? 0} suffix="篇" />
+          <Stat label="随记" value={journal_count ?? 0} suffix="条" />
+          <Stat label="卡片" value={flashcard_count ?? 0} suffix="张新增" />
+          <Stat label="来源" value={source_count ?? 0} suffix="篇" />
         </div>
       </section>
 
@@ -86,7 +86,7 @@ export default async function AtlasDashboard({
         <section>
           <div className="mb-3 flex items-center gap-2">
             <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Weekly Digest
+              本周摘要
             </h2>
             <Badge variant="outline">{latestDigest.period_end}</Badge>
           </div>

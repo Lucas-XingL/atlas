@@ -19,9 +19,11 @@ interface ReviewStats {
 export function ReviewSession({
   initial,
   backTo,
+  nextDueAt,
 }: {
   initial: CardWithAtlas[];
   backTo: string | null;
+  nextDueAt: string | null;
 }) {
   const router = useRouter();
   const [queue] = React.useState<CardWithAtlas[]>(initial);
@@ -56,13 +58,15 @@ export function ReviewSession({
       <Card className="border-dashed">
         <CardContent className="p-10 text-center">
           <div className="text-4xl">✨</div>
-          <div className="mt-4 text-base font-medium">没有待复习的卡片</div>
+          <div className="mt-4 text-base font-medium">今天没有待复习的卡片</div>
           <div className="mt-1 text-sm text-muted-foreground">
-            去 Journal 多写几条吧，今晚 AI 会提炼。
+            {nextDueAt
+              ? `下一次复习：${formatNextDue(nextDueAt)}`
+              : "先去写几条随记，AI 今晚会提炼成卡片。"}
           </div>
           <Link href={returnHref}>
             <Button variant="outline" className="mt-6">
-              返回{primaryAtlas ? ` ${primaryAtlas.name}` : ""}
+              返回{primaryAtlas ? ` ${primaryAtlas.name}` : " Atlas"}
             </Button>
           </Link>
         </CardContent>
@@ -84,18 +88,18 @@ export function ReviewSession({
           <div className="mt-8 flex justify-center gap-3">
             <Link href={returnHref}>
               <Button variant="outline">
-                返回{primaryAtlas ? ` ${primaryAtlas.name}` : ""}
+                返回{primaryAtlas ? ` ${primaryAtlas.name}` : " Atlas"}
               </Button>
             </Link>
             {primaryAtlas ? (
               <Link href={`/app/atlases/${primaryAtlas.slug}/flashcards`}>
-                <Button>看所有 flashcard</Button>
+                <Button>看所有卡片</Button>
               </Link>
             ) : null}
           </div>
 
           <div className="mt-6 text-xs text-muted-foreground">
-            下一次复习根据 SM-2 自动安排 · 记得的卡片会逐步拉长间隔
+            下一次复习由 SM-2 自动安排 · 记得的卡片间隔会逐步拉长
           </div>
         </CardContent>
       </Card>
@@ -169,11 +173,29 @@ export function ReviewSession({
       </Card>
 
       <div className="mt-6 flex items-center justify-between text-xs text-muted-foreground">
-        <span>ease {card.ease.toFixed(2)} · interval {card.interval_days}d · maturity {card.maturity}/10</span>
+        <span>
+          熟悉度 {card.maturity}/10 · 下次 {card.interval_days}d · 正确率{" "}
+          {card.review_count > 0
+            ? `${Math.round((card.success_count / card.review_count) * 100)}%`
+            : "—"}
+        </span>
         <Link href={returnHref} className="hover:text-foreground">
           退出复习 →
         </Link>
       </div>
     </div>
   );
+}
+
+function formatNextDue(iso: string): string {
+  const d = new Date(iso);
+  const ms = d.getTime() - Date.now();
+  if (ms < 0) return "刚刚";
+  const hours = Math.floor(ms / 3600_000);
+  if (hours < 1) return `${Math.max(1, Math.floor(ms / 60_000))} 分钟后`;
+  if (hours < 24) return `${hours} 小时后`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "明天";
+  if (days < 7) return `${days} 天后`;
+  return d.toLocaleDateString("zh-CN");
 }

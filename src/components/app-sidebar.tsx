@@ -33,7 +33,7 @@ export function AppSidebar({
         <div>
           <div className="mb-2 flex items-center justify-between px-2">
             <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Atlases
+              我的 Atlas
             </span>
             <Link
               href="/app/atlases/new"

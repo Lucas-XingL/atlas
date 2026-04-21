@@ -13,12 +13,12 @@ const MODEL_DEFAULTS: Record<LlmProvider, { quality: string; fast: string; hint:
   zhipu: {
     quality: "glm-5.1",
     fast: "glm-4.7-flashx",
-    hint: "智谱 GLM · 默认用 glm-5.1 做 distill/digest，glm-4.7-flashx 做 summary",
+    hint: "智谱 GLM · 默认用 glm-5.1 做提炼和周报，glm-4.7-flashx 做摘要",
   },
   minimax: {
     quality: "MiniMax-M2.7",
     fast: "MiniMax-M2.7-highspeed",
-    hint: "MiniMax · 默认用 MiniMax-M2.7 做 distill/digest，highspeed 版做 summary",
+    hint: "MiniMax · 默认用 M2.7 做提炼和周报，highspeed 版做摘要",
   },
 };
 
@@ -79,7 +79,7 @@ export function SettingsForm({ initial }: { initial: InitialSettings }) {
 
   return (
     <form onSubmit={save} className="space-y-8">
-      <Section title="LLM 厂商">
+      <Section title="模型厂商">
         <div className="grid grid-cols-2 gap-2">
           {(["zhipu", "minimax"] as const).map((p) => (
             <button
@@ -119,14 +119,14 @@ export function SettingsForm({ initial }: { initial: InitialSettings }) {
           ) : null}
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Quality 模型（distill / digest）">
+            <Field label="高质量模型（提炼 / 周报）">
               <Input
                 value={modelQuality}
                 onChange={(e) => setModelQuality(e.target.value)}
                 placeholder={defaults.quality}
               />
             </Field>
-            <Field label="Fast 模型（summary）">
+            <Field label="轻量模型（摘要）">
               <Input
                 value={modelFast}
                 onChange={(e) => setModelFast(e.target.value)}

@@ -51,7 +51,7 @@ export function NewAtlasForm() {
         />
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="thesis">Thesis（主题意图）</Label>
+        <Label htmlFor="thesis">主题描述</Label>
         <Textarea
           id="thesis"
           placeholder="例如：未来 18 个月的关键竞争点是 harness + context engineering。"
@@ -61,7 +61,7 @@ export function NewAtlasForm() {
           maxLength={500}
         />
         <p className="text-xs text-muted-foreground">
-          一两句话说明你为什么建这个 Atlas，AI 用它做 context。
+          一两句话说明你为什么建这个 Atlas，AI 会据此推荐阅读材料。
         </p>
       </div>
 

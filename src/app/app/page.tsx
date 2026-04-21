@@ -48,7 +48,7 @@ export default async function AppHomePage() {
                       </div>
                     ) : (
                       <div className="mt-1.5 text-sm italic text-muted-foreground/60">
-                        暂无 thesis
+                        暂无主题描述
                       </div>
                     )}
                   </div>

@@ -51,9 +51,9 @@ export default function HomePage() {
 
           <div className="mt-24 grid w-full grid-cols-1 gap-4 sm:grid-cols-3">
             {[
-              { t: "Ingest", d: "URL / 文本 → 15 秒内 AI 摘要" },
-              { t: "Journal", d: "随手记录 → AI 每晚提炼成卡" },
-              { t: "Recall", d: "SM-2 间隔重复 + 晨间推送" },
+              { t: "入库", d: "URL / 文本 → 15 秒内 AI 摘要" },
+              { t: "随记", d: "随手记录 → AI 每晚提炼成卡" },
+              { t: "记忆", d: "间隔重复 + 晨间推送" },
             ].map((f) => (
               <div
                 key={f.t}

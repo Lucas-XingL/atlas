@@ -46,7 +46,11 @@ export function applySm2(card: Flashcard, rating: ReviewRating): SrState {
   }
 
   const next = new Date(Date.now() + interval_days * 86_400_000).toISOString();
-  const maturity = Math.min(10, Math.floor(success_count * 0.7));
+  // Maturity reflects long-term retention: a card you've held for 21 days is more
+  // mature than one you just answered correctly for the first time.
+  // interval 1d → 1, 3d → ~3, 21d → ~5, 100d → ~7, 300d → ~9, 1y → 10
+  const maturity =
+    interval_days <= 0 ? 0 : Math.min(10, Math.round(Math.log10(interval_days + 1) * 4));
 
   return {
     ease: round2(ease),

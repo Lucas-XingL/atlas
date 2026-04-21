@@ -40,9 +40,9 @@ type Phase =
   | "error";
 
 const TIER_META: Record<Tier, { label: string; desc: string; color: string }> = {
-  top: { label: "Top Picks", desc: "灯塔级，必读", color: "text-primary" },
-  recommended: { label: "Recommended", desc: "重要参考", color: "text-foreground/90" },
-  further: { label: "Further Reading", desc: "可选补充", color: "text-muted-foreground" },
+  top: { label: "必读", desc: "灯塔级，代表作", color: "text-primary" },
+  recommended: { label: "推荐", desc: "重要参考", color: "text-foreground/90" },
+  further: { label: "可选", desc: "补充阅读", color: "text-muted-foreground" },
 };
 
 const CONCURRENCY = 3;
@@ -241,7 +241,7 @@ export function KickstartClient({
       <div>
         <div className="inline-flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
-          AI Reading Kickstart
+          AI 推荐阅读
         </div>
         <h1 className="mt-2 text-2xl font-semibold tracking-tight">
           为「{name}」挑一批入门材料
@@ -255,8 +255,8 @@ export function KickstartClient({
             <div className="text-4xl">🧭</div>
             <div className="text-base font-medium">让 AI 帮你找 8-12 篇值得读的文章</div>
             <div className="max-w-md text-sm text-muted-foreground">
-              AI 基于你的 thesis 生成几个搜索 query、用 Brave 搜真实 URL，
-              再分档筛选（Top / Recommended / Further）。整个过程 30-60 秒。
+              AI 基于你的主题生成搜索 query、用 Brave 搜真实链接，
+              再分档筛选（必读 / 推荐 / 可选）。整个过程 30-60 秒。
             </div>
             <Button onClick={startRecommendation} className="mt-2">
               <Sparkles className="h-4 w-4" />
@@ -266,14 +266,14 @@ export function KickstartClient({
               href={`/app/atlases/${slug}`}
               className="mt-1 text-xs text-muted-foreground hover:text-foreground"
             >
-              跳过，直接进 Dashboard
+              跳过，直接进概览
             </Link>
           </CardContent>
         </Card>
       ) : null}
 
       {phase === "drafting" ? (
-        <ProgressPanel step="AI 在思考搜索策略..." hint="基于你的 thesis 拟 3-5 个 query" />
+        <ProgressPanel step="AI 在思考搜索策略..." hint="基于主题拟 3-5 个 query" />
       ) : null}
 
       {phase === "searching" ? (
@@ -301,7 +301,7 @@ export function KickstartClient({
           </div>
           <ProgressPanel
             step="正在 Brave 搜索 + 筛选..."
-            hint={`约 ${queries.length * 6}s；完成后按 Top / Recommended / Further 分档`}
+            hint={`约 ${queries.length * 6}s；完成后按 必读 / 推荐 / 可选 分档`}
           />
         </div>
       ) : null}
