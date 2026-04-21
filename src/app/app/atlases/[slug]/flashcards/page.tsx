@@ -33,7 +33,7 @@ export default async function FlashcardsPage({ params }: { params: { slug: strin
           共 {cards?.length ?? 0} 张 · {dueCount} 张待复习
         </div>
         {dueCount > 0 ? (
-          <Link href="/app/flashcards/due">
+          <Link href={`/app/flashcards/due?from=/app/atlases/${params.slug}`}>
             <Button size="sm">开始复习</Button>
           </Link>
         ) : null}

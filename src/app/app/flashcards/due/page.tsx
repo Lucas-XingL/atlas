@@ -3,7 +3,11 @@ import { ReviewSession } from "@/components/review-session";
 
 export const dynamic = "force-dynamic";
 
-export default async function DuePage() {
+export default async function DuePage({
+  searchParams,
+}: {
+  searchParams: { from?: string };
+}) {
   const supabase = createSupabaseServer();
   const { data: cards } = await supabase
     .from("flashcards")
@@ -20,7 +24,7 @@ export default async function DuePage() {
           快速过一遍 · remembered 延长间隔 · forgot 重置
         </p>
       </div>
-      <ReviewSession initial={(cards ?? []) as any} />
+      <ReviewSession initial={(cards ?? []) as any} backTo={searchParams.from ?? null} />
     </div>
   );
 }

@@ -55,7 +55,7 @@ export default async function AtlasDashboard({
                 ))}
               </ul>
               <Link
-                href="/app/flashcards/due"
+                href={`/app/flashcards/due?from=/app/atlases/${params.slug}`}
                 className="mt-4 inline-flex text-sm text-primary hover:underline"
               >
                 开始复习 →
