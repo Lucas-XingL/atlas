@@ -170,10 +170,42 @@ export function SourcesPageClient({
 }
 
 function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; onDelete: () => void }) {
+  const router = useRouter();
+  const [showPaste, setShowPaste] = React.useState(false);
+  const [pasteText, setPasteText] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
   async function remove() {
     if (!confirm("删除这条 source？")) return;
     await fetch(`/api/atlases/${slug}/sources/${source.id}`, { method: "DELETE" });
     onDelete();
+  }
+
+  async function retry() {
+    setBusy(true);
+    try {
+      await fetch(`/api/sources/${source.id}/process`, { method: "POST" });
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitPaste() {
+    if (pasteText.trim().length < 20) return;
+    setBusy(true);
+    try {
+      await fetch(`/api/sources/${source.id}/paste`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: pasteText, title: source.title }),
+      });
+      setShowPaste(false);
+      setPasteText("");
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -219,8 +251,42 @@ function SourceItem({ source, slug, onDelete }: { source: Source; slug: string; 
               </ul>
             ) : null}
             {source.fetch_status === "failed" && source.fetch_error ? (
-              <div className="mt-3 rounded border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
-                抓取失败：{source.fetch_error}
+              <div className="mt-3 space-y-2">
+                <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
+                  抓取失败：{source.fetch_error}
+                </div>
+                <div className="flex gap-2">
+                  {source.url ? (
+                    <Button size="sm" variant="outline" onClick={retry} disabled={busy}>
+                      {busy ? "..." : "重试"}
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowPaste((v) => !v)}
+                    disabled={busy}
+                  >
+                    {showPaste ? "取消" : "粘贴正文"}
+                  </Button>
+                </div>
+                {showPaste ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      rows={6}
+                      placeholder="把原文粘过来（≥20 字）..."
+                      value={pasteText}
+                      onChange={(e) => setPasteText(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      onClick={submitPaste}
+                      disabled={busy || pasteText.trim().length < 20}
+                    >
+                      {busy ? "处理..." : "保存并生成摘要"}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </div>

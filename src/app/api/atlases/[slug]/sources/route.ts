@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createSupabaseServer, createSupabaseServiceRole } from "@/lib/supabase/server";
+import { createSupabaseServer } from "@/lib/supabase/server";
 import { decodeSlug } from "@/lib/slug";
-import { resolveLlmConfig } from "@/lib/ai/resolve-config";
-import { fetchWebArticle, detectSourceType } from "@/lib/fetch/web";
-import { summarizeSource } from "@/lib/ai/summarize";
+import { detectSourceType } from "@/lib/fetch/web";
+import { processSourceById, summarizePastedText } from "@/lib/pipeline/process-source";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -16,7 +15,11 @@ const postSchema = z.union([
 
 export async function GET(_req: Request, { params }: { params: { slug: string } }) {
   const supabase = createSupabaseServer();
-  const { data: atlas } = await supabase.from("atlases").select("id").eq("slug", decodeSlug(params.slug)).maybeSingle();
+  const { data: atlas } = await supabase
+    .from("atlases")
+    .select("id")
+    .eq("slug", decodeSlug(params.slug))
+    .maybeSingle();
   if (!atlas) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const { data, error } = await supabase
@@ -36,7 +39,11 @@ export async function POST(request: Request, { params }: { params: { slug: strin
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const { data: atlas } = await supabase.from("atlases").select("id").eq("slug", decodeSlug(params.slug)).maybeSingle();
+  const { data: atlas } = await supabase
+    .from("atlases")
+    .select("id")
+    .eq("slug", decodeSlug(params.slug))
+    .maybeSingle();
   if (!atlas) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   const body = await request.json().catch(() => null);
@@ -44,27 +51,17 @@ export async function POST(request: Request, { params }: { params: { slug: strin
   if (!parsed.success) return NextResponse.json({ error: parsed.error.message }, { status: 400 });
 
   const input = parsed.data;
-  let initialTitle: string;
-  let initialUrl: string | null;
-  let initialType: "web" | "arxiv" | "pdf" | "video" | "text";
-  if ("url" in input) {
-    initialTitle = input.url;
-    initialUrl = input.url;
-    initialType = detectSourceType(input.url);
-  } else {
-    initialTitle = input.title?.trim() || input.text.slice(0, 60);
-    initialUrl = null;
-    initialType = "text";
-  }
+  const isUrl = "url" in input;
+  const initialTitle = isUrl ? input.url : input.title?.trim() || input.text.slice(0, 60);
 
   const { data: inserted, error: insertErr } = await supabase
     .from("sources")
     .insert({
       atlas_id: atlas.id,
       user_id: user.id,
-      url: initialUrl,
+      url: isUrl ? input.url : null,
       title: initialTitle,
-      source_type: initialType,
+      source_type: isUrl ? detectSourceType(input.url) : "text",
       status: "unread",
       fetch_status: "pending",
     })
@@ -75,77 +72,21 @@ export async function POST(request: Request, { params }: { params: { slug: strin
     return NextResponse.json({ error: insertErr?.message ?? "insert failed" }, { status: 400 });
   }
 
-  // Fire-and-forget. Use service role so the async task isn't affected by cookie lifecycle.
-  const sourceId = inserted.id;
-  void processSource(sourceId, user.id, input).catch((err) => {
-    console.error("[sources] processSource failed", { sourceId, err });
-  });
+  // Synchronously process so the response reflects the real outcome.
+  // Vercel serverless will not reliably run anything after the response is sent.
+  const result = isUrl
+    ? await processSourceById(supabase, inserted.id, user.id)
+    : await summarizePastedText(supabase, inserted.id, user.id, {
+        text: input.text,
+        title: input.title,
+      });
 
-  return NextResponse.json({ source: inserted }, { status: 201 });
-}
+  const { data: finalSource } = await supabase
+    .from("sources")
+    .select("*")
+    .eq("id", inserted.id)
+    .single();
 
-async function processSource(
-  sourceId: string,
-  userId: string,
-  input: z.infer<typeof postSchema>
-) {
-  const admin = createSupabaseServiceRole();
-
-  try {
-    await admin.from("sources").update({ fetch_status: "fetching" }).eq("id", sourceId);
-
-    let title = "";
-    let markdown = "";
-    let pub_date: string | null = null;
-    let author: string | null = null;
-
-    if ("url" in input) {
-      const article = await fetchWebArticle(input.url);
-      title = article.title;
-      markdown = article.markdown;
-      pub_date = article.pub_date;
-      author = article.byline;
-    } else {
-      title = input.title?.trim() || input.text.slice(0, 60);
-      markdown = input.text;
-    }
-
-    await admin
-      .from("sources")
-      .update({
-        fetch_status: "summarizing",
-        title,
-        raw_content: markdown,
-        pub_date,
-        author,
-      })
-      .eq("id", sourceId);
-
-    // Re-use server client configured for service role to read user_settings
-    const config = await resolveLlmConfig(admin, userId);
-    const summary = await summarizeSource(config, {
-      title,
-      url: "url" in input ? input.url : null,
-      markdown,
-    });
-
-    await admin
-      .from("sources")
-      .update({
-        summary,
-        fetch_status: "ready",
-        fetch_error: null,
-      })
-      .eq("id", sourceId);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    console.error("[sources] processSource error", { sourceId, message });
-    await admin
-      .from("sources")
-      .update({
-        fetch_status: "failed",
-        fetch_error: message.slice(0, 500),
-      })
-      .eq("id", sourceId);
-  }
+  const status = result.ok ? 201 : 200; // 200 even on processing failure — the row exists
+  return NextResponse.json({ source: finalSource }, { status });
 }
