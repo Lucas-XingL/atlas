@@ -1,5 +1,5 @@
 import { createSupabaseServer } from "@/lib/supabase/server";
-import { decodeSlug } from "@/lib/slug";
+import { getAtlasBySlug } from "@/lib/atlas-data";
 import { JournalInput } from "@/components/journal-input";
 import { JournalTimeline } from "@/components/journal-timeline";
 import { AtlasDistillButton } from "@/components/atlas-distill-button.server";
@@ -10,14 +10,9 @@ export default async function JournalPage({
 }: {
   params: { slug: string };
 }) {
-  const slug = decodeSlug(params.slug);
-  const supabase = createSupabaseServer();
-  const { data: atlas } = await supabase
-    .from("atlases")
-    .select("id")
-    .eq("slug", slug)
-    .single();
+  const atlas = await getAtlasBySlug(params.slug);
   if (!atlas) return null;
+  const supabase = createSupabaseServer();
 
   const { data: entries } = await supabase
     .from("journal_entries")
@@ -28,8 +23,8 @@ export default async function JournalPage({
 
   return (
     <div className="mx-auto max-w-3xl px-8 py-10 space-y-8">
-      <JournalInput slug={slug} />
-      <AtlasDistillButton slug={slug} />
+      <JournalInput slug={atlas.slug} />
+      <AtlasDistillButton slug={atlas.slug} />
       <JournalTimeline initialEntries={(entries ?? []) as JournalEntry[]} />
     </div>
   );

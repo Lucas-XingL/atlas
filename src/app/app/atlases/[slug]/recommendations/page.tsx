@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createSupabaseServer } from "@/lib/supabase/server";
-import { decodeSlug } from "@/lib/slug";
+import { getAtlasBySlug } from "@/lib/atlas-data";
 import { notFound } from "next/navigation";
 import { RecommendationsShell, type SubTab } from "./recommendations-shell";
 import { PlanSection } from "./plan-section";
@@ -25,15 +25,9 @@ export default async function RecommendationsPage({
   params: { slug: string };
   searchParams: { tab?: string };
 }) {
-  const supabase = createSupabaseServer();
-  const slug = decodeSlug(params.slug);
-
-  const { data: atlas } = await supabase
-    .from("atlases")
-    .select("id, slug, name, thesis")
-    .eq("slug", slug)
-    .maybeSingle();
+  const atlas = await getAtlasBySlug(params.slug);
   if (!atlas) notFound();
+  const supabase = createSupabaseServer();
 
   const tab: SubTab = VALID_TABS.includes(searchParams.tab as SubTab)
     ? (searchParams.tab as SubTab)
@@ -52,7 +46,7 @@ export default async function RecommendationsPage({
       .eq("is_active", true)
       .maybeSingle();
     if (!existingPath) {
-      redirect(`/app/atlases/${slug}/path/new`);
+      redirect(`/app/atlases/${atlas.slug}/path/new`);
     }
   }
 
@@ -61,24 +55,24 @@ export default async function RecommendationsPage({
   if (tab === "plan") {
     const pathData = await loadPath(supabase, atlas.id);
     sectionContent = (
-      <PlanSection slug={slug} path={pathData} atlasName={atlas.name} thesis={atlas.thesis} />
+      <PlanSection slug={atlas.slug} path={pathData} atlasName={atlas.name} thesis={atlas.thesis} />
     );
   } else if (tab === "subscription") {
     const subData = await loadSubscriptions(supabase, atlas.id);
     sectionContent = (
       <SubscriptionSection
-        slug={slug}
+        slug={atlas.slug}
         subscriptions={subData.subscriptions}
         items={subData.items}
       />
     );
   } else {
     const manual = await loadManual(supabase, atlas.id);
-    sectionContent = <ManualSection slug={slug} initial={manual} />;
+    sectionContent = <ManualSection slug={atlas.slug} initial={manual} />;
   }
 
   return (
-    <RecommendationsShell slug={slug} currentTab={tab} counts={counts}>
+    <RecommendationsShell slug={atlas.slug} currentTab={tab} counts={counts}>
       {sectionContent}
     </RecommendationsShell>
   );
@@ -88,53 +82,59 @@ async function loadCounts(
   supabase: ReturnType<typeof createSupabaseServer>,
   atlasId: string
 ) {
-  // Path candidate count: resources across any active path still 'suggested'
-  const { data: activePath } = await supabase
-    .from("learning_paths")
-    .select("id")
-    .eq("atlas_id", atlasId)
-    .eq("is_active", true)
-    .maybeSingle();
+  // Kick off the three category count pipelines in parallel.
+  const pathPipeline = (async () => {
+    const { data: activePath } = await supabase
+      .from("learning_paths")
+      .select("id")
+      .eq("atlas_id", atlasId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!activePath) return 0;
 
-  let pathCount = 0;
-  if (activePath) {
     const { data: stages } = await supabase
       .from("path_stages")
       .select("id")
       .eq("path_id", activePath.id);
     const stageIds = (stages ?? []).map((s) => s.id);
-    if (stageIds.length > 0) {
-      const { count } = await supabase
-        .from("path_resources")
-        .select("id", { count: "exact", head: true })
-        .in("stage_id", stageIds)
-        .eq("user_status", "suggested");
-      pathCount = count ?? 0;
-    }
-  }
+    if (stageIds.length === 0) return 0;
 
-  // Subscription candidates (items new)
-  const { data: subs } = await supabase
-    .from("subscriptions")
-    .select("id")
-    .eq("atlas_id", atlasId);
-  const subIds = (subs ?? []).map((s) => s.id);
-  let subCount = 0;
-  if (subIds.length > 0) {
+    const { count } = await supabase
+      .from("path_resources")
+      .select("id", { count: "exact", head: true })
+      .in("stage_id", stageIds)
+      .eq("user_status", "suggested");
+    return count ?? 0;
+  })();
+
+  const subPipeline = (async () => {
+    const { data: subs } = await supabase
+      .from("subscriptions")
+      .select("id")
+      .eq("atlas_id", atlasId);
+    const subIds = (subs ?? []).map((s) => s.id);
+    if (subIds.length === 0) return 0;
     const { count } = await supabase
       .from("subscription_items")
       .select("id", { count: "exact", head: true })
       .in("subscription_id", subIds)
       .eq("user_status", "new");
-    subCount = count ?? 0;
-  }
+    return count ?? 0;
+  })();
 
-  const { count: manualCount } = await supabase
+  const manualPipeline = supabase
     .from("manual_candidates")
     .select("id", { count: "exact", head: true })
-    .eq("atlas_id", atlasId);
+    .eq("atlas_id", atlasId)
+    .then((r) => r.count ?? 0);
 
-  return { path: pathCount, subscription: subCount, manual: manualCount ?? 0 };
+  const [pathCount, subCount, manualCount] = await Promise.all([
+    pathPipeline,
+    subPipeline,
+    manualPipeline,
+  ]);
+
+  return { path: pathCount, subscription: subCount, manual: manualCount };
 }
 
 async function loadPath(

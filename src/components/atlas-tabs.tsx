@@ -26,6 +26,7 @@ export function AtlasTabs({ slug }: { slug: string }) {
             <Link
               key={t.href}
               href={t.href}
+              prefetch
               className={cn(
                 "relative py-3 transition-colors",
                 active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
