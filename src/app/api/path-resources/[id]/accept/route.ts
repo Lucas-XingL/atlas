@@ -41,6 +41,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
 
   const hasUrl = typeof resource.url === "string" && resource.url.length > 0;
   const isConsumable = resource.resource_type === "consumable";
+  const isPhysical = resource.resource_type === "physical";
 
   // Create the source row
   const { data: src, error: srcErr } = await supabase
@@ -51,7 +52,7 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
       url: resource.url,
       title: resource.title,
       author: resource.author,
-      source_type: hasUrl ? detectSourceType(resource.url) : "text",
+      source_type: isPhysical ? "pdf" : hasUrl ? detectSourceType(resource.url) : "text",
       resource_type: resource.resource_type,
       path_resource_id: resource.id,
       status: "unread",

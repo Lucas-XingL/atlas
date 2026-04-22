@@ -55,6 +55,7 @@ export interface Source {
   origin: SourceOrigin;
   origin_ref: string | null;
   raw_content: string | null;
+  pdf_storage_path: string | null;
   summary: SourceSummary;
   status: SourceStatus;
   ai_recommended: boolean;

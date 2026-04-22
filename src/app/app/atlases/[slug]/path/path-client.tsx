@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { BookOpen, ExternalLink, Loader2, Trash2, Search, Play, Check } from "lucide-react";
+import { BookOpen, ExternalLink, Loader2, Trash2, Search, Play, Check, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PdfUploadDialog } from "@/components/pdf-upload-dialog";
+import { StageRegenerateDialog } from "@/components/stage-regenerate-dialog";
 import type {
   LearningPath,
   PathResource,
@@ -23,11 +25,18 @@ const TYPE_META: Record<ResourceType, { label: string; icon: React.ReactNode }> 
 
 const STATUS_META: Record<PathResourceUserStatus, { label: string; tone: string }> = {
   suggested: { label: "待开始", tone: "text-muted-foreground" },
-  accepted: { label: "已接受", tone: "text-foreground" },
+  accepted: { label: "待开始", tone: "text-muted-foreground" },
   reading: { label: "读中", tone: "text-primary" },
   finished: { label: "已读完", tone: "text-emerald-400" },
   skipped: { label: "已跳过", tone: "text-muted-foreground/60" },
 };
+
+const STATUS_CHOICES: { value: PathResourceUserStatus; label: string }[] = [
+  { value: "suggested", label: "待开始" },
+  { value: "reading", label: "读中" },
+  { value: "finished", label: "已读完" },
+  { value: "skipped", label: "已跳过" },
+];
 
 export function PathClient({
   slug,
@@ -137,10 +146,25 @@ function StageBlock({
   const extra = stage.resources.filter((r) => r.tier === "extra");
   const coreFinished = core.filter((r) => r.user_status === "finished").length;
   const stagePct = core.length === 0 ? 0 : Math.round((coreFinished / core.length) * 100);
+  const [regenOpen, setRegenOpen] = React.useState(false);
 
   async function remove() {
     if (!confirm(`删除阶段「${stage.name}」？其中的资源会一起删除。`)) return;
     await fetch(`/api/path-stages/${stage.id}`, { method: "DELETE" });
+    onChange();
+  }
+
+  async function regenerate(feedback: string) {
+    const res = await fetch(`/api/path-stages/${stage.id}/regenerate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(feedback ? { feedback } : {}),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error ?? `HTTP ${res.status}`);
+    }
+    setRegenOpen(false);
     onChange();
   }
 
@@ -174,14 +198,24 @@ function StageBlock({
             </span>
           </div>
         </div>
-        <button
-          onClick={remove}
-          className="text-muted-foreground hover:text-destructive"
-          aria-label="删除阶段"
-          title="删除阶段"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={() => setRegenOpen(true)}
+            className="text-muted-foreground hover:text-primary"
+            aria-label="重新生成此阶段"
+            title="重新生成此阶段"
+          >
+            <Sparkles className="h-4 w-4" />
+          </button>
+          <button
+            onClick={remove}
+            className="text-muted-foreground hover:text-destructive"
+            aria-label="删除阶段"
+            title="删除阶段"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 space-y-2">
@@ -207,6 +241,12 @@ function StageBlock({
           </>
         ) : null}
       </div>
+      <StageRegenerateDialog
+        open={regenOpen}
+        stageName={stage.name}
+        onClose={() => setRegenOpen(false)}
+        onSubmit={regenerate}
+      />
     </section>
   );
 }
@@ -221,10 +261,23 @@ function ResourceRow({
   onChange: () => void;
 }) {
   const [busy, setBusy] = React.useState(false);
+  const [pdfOpen, setPdfOpen] = React.useState(false);
   const typeMeta = TYPE_META[r.resource_type];
   const statusMeta = STATUS_META[r.user_status];
 
+  // For physical (books), we open a PDF upload dialog instead of the default accept
+  async function acceptAndReturnSourceId(): Promise<string> {
+    const res = await fetch(`/api/path-resources/${r.id}/accept`, { method: "POST" });
+    const j = await res.json();
+    if (!res.ok || !j.source_id) throw new Error(j.error ?? "创建 source 失败");
+    return j.source_id as string;
+  }
+
   async function accept() {
+    if (r.resource_type === "physical") {
+      setPdfOpen(true);
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch(`/api/path-resources/${r.id}/accept`, { method: "POST" });
@@ -240,27 +293,14 @@ function ResourceRow({
     }
   }
 
-  async function markFinished() {
+  async function updateStatus(next: PathResourceUserStatus) {
+    if (next === r.user_status) return;
     setBusy(true);
     try {
       await fetch(`/api/path-resources/${r.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_status: "finished" }),
-      });
-      onChange();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function skip() {
-    setBusy(true);
-    try {
-      await fetch(`/api/path-resources/${r.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_status: "skipped" }),
+        body: JSON.stringify({ user_status: next }),
       });
       onChange();
     } finally {
@@ -283,6 +323,7 @@ function ResourceRow({
   const isSkipped = r.user_status === "skipped";
 
   return (
+    <>
     <div
       className={cn(
         "flex items-start gap-3 rounded-md border p-3 transition-colors",
@@ -340,7 +381,7 @@ function ResourceRow({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-1">
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
         {!r.source_id && !isFinished && !isSkipped ? (
           <Button size="sm" onClick={accept} disabled={busy}>
             {busy ? (
@@ -361,24 +402,19 @@ function ResourceRow({
             查看
           </a>
         ) : null}
-        {!isFinished && r.source_id ? (
-          <button
-            onClick={markFinished}
-            disabled={busy}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            标记已读
-          </button>
-        ) : null}
-        {!isFinished && !isSkipped ? (
-          <button
-            onClick={skip}
-            disabled={busy}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            跳过
-          </button>
-        ) : null}
+        <select
+          value={r.user_status === "accepted" ? "suggested" : r.user_status}
+          onChange={(e) => updateStatus(e.target.value as PathResourceUserStatus)}
+          disabled={busy}
+          className="rounded border border-border bg-background px-1.5 py-1 text-[11px] text-muted-foreground hover:border-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
+          aria-label="修改状态"
+        >
+          {STATUS_CHOICES.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
         <button
           onClick={remove}
           disabled={busy}
@@ -388,5 +424,18 @@ function ResourceRow({
         </button>
       </div>
     </div>
+    {r.resource_type === "physical" ? (
+      <PdfUploadDialog
+        open={pdfOpen}
+        resourceTitle={r.title}
+        onClose={() => setPdfOpen(false)}
+        createSource={acceptAndReturnSourceId}
+        onIngested={() => {
+          setPdfOpen(false);
+          window.location.href = `/app/atlases/${slug}/reading`;
+        }}
+      />
+    ) : null}
+    </>
   );
 }

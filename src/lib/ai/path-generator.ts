@@ -127,6 +127,86 @@ export async function generateLearningPath(
   return normalize(parsed);
 }
 
+const STAGE_SYSTEM = `你是一个学习路径规划师。用户已经有一条路径，现在只想重新生成其中一个 Stage 的资源列表。
+上下文：用户会给你 atlas 的主题、当前这个 Stage 的名字/目标/时长，以及其它 Stage 的概览（避免内容重复）。
+还可能给你反馈：比如"资源太理论了，想要偏工程的"，你必须按反馈调整方向。
+
+输出严格 JSON：
+{
+  "resources": [
+    {
+      "tier": "core" | "extra",
+      "resource_type": "consumable" | "external" | "physical",
+      "title": "...",
+      "url": null 或 URL 字符串,
+      "author": "..." 或 null,
+      "why_relevant": "≤80 字",
+      "search_hint": "..." 或 null
+    }
+  ]
+}
+
+规则：
+- 3-6 条 resources，其中 3-4 条 core + 0-2 条 extra
+- tier=core 是"最小闭环"
+- 不推荐过时资源
+- 不确定 URL 就给 null + search_hint
+- 不要与其它 Stage 的内容重复
+- 严格 JSON，不要 markdown 围栏
+- 字符串内不要出现双引号（用单引号或中文引号）`;
+
+export interface StageContext {
+  atlas: Pick<Atlas, "name" | "thesis" | "tags">;
+  stage: { name: string; intent: string | null; est_duration: string | null };
+  sibling_stages: { name: string; intent: string | null }[];
+  feedback?: string | null;
+}
+
+export async function generateStageResources(
+  llm: ResolvedLlmConfig,
+  ctx: StageContext
+): Promise<GeneratedResource[]> {
+  const siblingLines = ctx.sibling_stages
+    .map((s, i) => `${i + 1}. ${s.name}${s.intent ? ` — ${s.intent}` : ""}`)
+    .join("\n");
+
+  const userMsg = [
+    `Atlas: ${ctx.atlas.name}`,
+    ctx.atlas.thesis ? `Thesis: ${ctx.atlas.thesis}` : null,
+    "",
+    `当前 Stage：${ctx.stage.name}`,
+    ctx.stage.intent ? `目标：${ctx.stage.intent}` : null,
+    ctx.stage.est_duration ? `预计时长：${ctx.stage.est_duration}` : null,
+    "",
+    siblingLines ? `其它 Stage（避免重复）：\n${siblingLines}` : null,
+    "",
+    ctx.feedback ? `用户反馈 / 方向：${ctx.feedback}` : null,
+    "",
+    "请只为当前 Stage 生成 resources。",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await chat(
+    llm.creds,
+    llm.models.quality,
+    [
+      { role: "system", content: STAGE_SYSTEM },
+      { role: "user", content: userMsg },
+    ],
+    { temperature: 0.55, max_tokens: 2000, response_format: "json", timeout_ms: 90_000 }
+  );
+
+  const parsed = parseJsonLoose<{ resources?: unknown }>(raw);
+  const resources = Array.isArray(parsed.resources)
+    ? parsed.resources.filter((r: any) => r && typeof r.title === "string").map(normalizeResource)
+    : [];
+  if (resources.length === 0) {
+    throw new Error("Stage regeneration returned no valid resources");
+  }
+  return resources;
+}
+
 function normalize(raw: Partial<GeneratedPath>): GeneratedPath {
   const domain = DOMAINS.includes(raw.knowledge_domain as KnowledgeDomain)
     ? (raw.knowledge_domain as KnowledgeDomain)
