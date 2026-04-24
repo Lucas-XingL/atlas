@@ -13,7 +13,10 @@ const schema = z.object({
   pdf_storage_path: z.string().min(1),
 });
 
-const MAX_TEXT_CHARS = 400_000;
+// No hard cap on raw_content — a book may run 500k–2M chars and we want all
+// of it searchable + highlightable. LLM summarization has its own 18k window
+// inside summarizeSource, so large inputs don't blow up token usage there.
+const MIN_USABLE_CHARS = 50;
 
 /**
  * Ingest an already-uploaded document (PDF or EPUB):
@@ -85,9 +88,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
       unit_count = res.page_count;
     }
 
-    const trimmed = text.slice(0, MAX_TEXT_CHARS).trim();
+    const trimmed = text.trim();
 
-    if (!trimmed || trimmed.length < 50) {
+    if (!trimmed || trimmed.length < MIN_USABLE_CHARS) {
       const detail = isEpub
         ? unit_count === 0
           ? "EPUB 里没有读到章节内容（文件可能是空的或损坏）"

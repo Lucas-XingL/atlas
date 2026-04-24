@@ -6,12 +6,14 @@ import remarkGfm from "remark-gfm";
 
 export interface HighlightRange {
   id: string;
+  /** Global char offset into the full markdown (not the current page). */
   start: number;
   end: number;
 }
 
 interface SelectionInfo {
   text: string;
+  /** Global char offset into the full markdown. */
   start: number;
   end: number;
   rect: DOMRect;
@@ -19,35 +21,38 @@ interface SelectionInfo {
 
 interface MarkdownReaderProps {
   markdown: string;
+  /**
+   * Character offset of this page inside the full markdown. Selection events
+   * and highlight overlays are translated against this so the caller always
+   * deals in global offsets.
+   */
+  pageStart: number;
+  pageEnd: number;
   highlights: HighlightRange[];
   activeHighlightId: string | null;
   onHighlightClick: (id: string) => void;
   onSelect: (sel: SelectionInfo | null) => void;
-  onProgress: (pct: number) => void;
 }
 
 /**
- * Renders markdown + overlays highlight background spans + emits selection
- * events with character offsets measured against the rendered plain text.
- *
- * Offsets are computed using document.createRange() + toString().length from
- * the start of the reader container to the selection anchor. This is stable
- * across re-renders as long as the markdown source doesn't change.
+ * Renders one page of markdown + overlays highlight spans.
+ * Highlight offsets stay addressable against the full document, not the
+ * currently-rendered slice.
  */
 export function MarkdownReader({
   markdown,
+  pageStart,
+  pageEnd,
   highlights,
   activeHighlightId,
   onHighlightClick,
   onSelect,
-  onProgress,
 }: MarkdownReaderProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   // --- Selection tracking ---
   React.useEffect(() => {
     function handleMouseUp() {
-      // Defer so selection is finalized
       setTimeout(() => {
         const sel = window.getSelection();
         const container = containerRef.current;
@@ -70,9 +75,13 @@ export function MarkdownReader({
           return;
         }
 
-        const start = offsetFromContainerStart(container, range.startContainer, range.startOffset);
+        const localStart = offsetFromContainerStart(
+          container,
+          range.startContainer,
+          range.startOffset
+        );
+        const start = pageStart + localStart;
         const end = start + text.length;
-
         const rect = range.getBoundingClientRect();
         onSelect({ text, start, end, rect });
       }, 0);
@@ -80,46 +89,24 @@ export function MarkdownReader({
 
     document.addEventListener("mouseup", handleMouseUp);
     return () => document.removeEventListener("mouseup", handleMouseUp);
-  }, [onSelect]);
+  }, [onSelect, pageStart]);
 
-  // --- Progress via IntersectionObserver on paragraph ends ---
+  // --- Overlay highlights after every render of this page ---
   React.useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
-    // Track bottom-most scroll position as the user reads
-    function computeProgress() {
-      if (!container) return;
-      const { top, height } = container.getBoundingClientRect();
-      const viewportH = window.innerHeight;
-      if (height <= 0) return;
-      // How much of the container is above the viewport bottom
-      const scrolledPastBottom = Math.max(0, Math.min(height, viewportH - top));
-      const pct = Math.round((scrolledPastBottom / height) * 100);
-      onProgress(Math.min(100, Math.max(0, pct)));
-    }
-
-    let ticking = false;
-    function onScroll() {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        computeProgress();
-        ticking = false;
-      });
-    }
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    computeProgress();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [onProgress]);
-
-  // --- Overlay highlights after render ---
-  React.useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    applyHighlightOverlays(container, highlights, activeHighlightId, onHighlightClick);
-  }, [highlights, activeHighlightId, markdown, onHighlightClick]);
+    // Only overlay highlights that intersect the current page window, and
+    // translate their offsets into page-local coordinates.
+    const local = highlights
+      .filter((h) => h.end > pageStart && h.start < pageEnd)
+      .map((h) => ({
+        id: h.id,
+        start: Math.max(0, h.start - pageStart),
+        end: Math.min(pageEnd - pageStart, h.end - pageStart),
+      }))
+      .filter((h) => h.end > h.start);
+    applyHighlightOverlays(container, local, activeHighlightId, onHighlightClick);
+  }, [highlights, activeHighlightId, markdown, pageStart, pageEnd, onHighlightClick]);
 
   return (
     <div ref={containerRef} className="prose-atlas select-text">
@@ -130,7 +117,7 @@ export function MarkdownReader({
 
 /**
  * Walk text nodes in container (in order) to find the absolute character
- * offset for a given (node, offsetWithinNode).
+ * offset for a given (node, offsetWithinNode). Page-local only.
  */
 function offsetFromContainerStart(
   container: HTMLElement,
@@ -147,17 +134,18 @@ function offsetFromContainerStart(
     total += node.textContent?.length ?? 0;
     node = walker.nextNode();
   }
-  // Fallback: target wasn't inside container (shouldn't normally happen)
   return total;
 }
 
-/**
- * For each highlight range, wrap the corresponding text nodes in <mark> spans.
- * Runs after React render; removes previous overlays first.
- */
+interface LocalRange {
+  id: string;
+  start: number;
+  end: number;
+}
+
 function applyHighlightOverlays(
   container: HTMLElement,
-  ranges: HighlightRange[],
+  ranges: LocalRange[],
   activeId: string | null,
   onClick: (id: string) => void
 ) {

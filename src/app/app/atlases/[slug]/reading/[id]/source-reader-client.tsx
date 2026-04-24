@@ -28,6 +28,7 @@ import type {
   SourceSummary,
 } from "@/lib/types";
 import { MarkdownReader, type HighlightRange } from "./markdown-reader";
+import { paginateMarkdown, pageOfOffset } from "./paginate";
 
 type ReaderView = "markdown" | "iframe";
 
@@ -633,27 +634,196 @@ function MarkdownMode({
   onDeleteHighlight: (id: string) => void;
   onPromoteHighlight: (id: string) => void;
 }) {
+  const markdown = source.raw_content ?? "";
+  const pages = React.useMemo(() => paginateMarkdown(markdown), [markdown]);
+
+  // Restore page from URL (?page=N 1-indexed), otherwise from progress. Keep
+  // the index clamped so stale links don't crash the reader.
+  const [currentPage, setCurrentPage] = React.useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    const sp = new URLSearchParams(window.location.search);
+    const fromUrl = Number(sp.get("page"));
+    if (Number.isFinite(fromUrl) && fromUrl >= 1) {
+      return Math.min(pages.length - 1, Math.max(0, fromUrl - 1));
+    }
+    // Derive initial page from saved reading_progress.
+    if (source.reading_progress > 0 && source.reading_progress < 100) {
+      return Math.min(
+        pages.length - 1,
+        Math.max(0, Math.round((source.reading_progress / 100) * pages.length) - 1)
+      );
+    }
+    return 0;
+  });
+
+  const pageCount = pages.length;
+  const page = pages[Math.min(currentPage, pageCount - 1)];
+
+  // Persist progress + URL ?page= when turning pages.
+  React.useEffect(() => {
+    if (pageCount === 0) return;
+    const pct = Math.round(((currentPage + 1) / pageCount) * 100);
+    onProgress(pct);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("page", String(currentPage + 1));
+    window.history.replaceState(null, "", url.toString());
+
+    // Scroll to top of the reader for a clean page-turn feel.
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [currentPage, pageCount, onProgress]);
+
+  const goPrev = React.useCallback(() => {
+    setCurrentPage((p) => Math.max(0, p - 1));
+  }, []);
+  const goNext = React.useCallback(() => {
+    setCurrentPage((p) => Math.min(pageCount - 1, p + 1));
+  }, [pageCount]);
+
+  // Keyboard navigation.
+  React.useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Ignore when the user is typing inside an input / textarea / contenteditable.
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        goPrev();
+      } else if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+        e.preventDefault();
+        goNext();
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [goPrev, goNext]);
+
+  // Clicking a highlight in the sidebar should jump to the page containing it.
+  const jumpToHighlight = React.useCallback(
+    (id: string) => {
+      setActiveHighlightId(id);
+      const h = highlights.find((x) => x.id === id);
+      if (!h) return;
+      const target = pageOfOffset(pages, h.start_offset);
+      if (target !== currentPage) setCurrentPage(target);
+    },
+    [highlights, pages, currentPage, setActiveHighlightId]
+  );
+
+  // Count highlights that live on the currently-visible page (for sidebar hint).
+  const highlightsOnPage = React.useMemo(
+    () =>
+      highlights.filter((h) => h.end_offset > page.start && h.start_offset < page.end)
+        .length,
+    [highlights, page.start, page.end]
+  );
+
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr),320px]">
-      <div className="min-w-0 rounded-lg border border-border/60 bg-card/20 p-6">
-        <MarkdownReader
-          markdown={source.raw_content!}
-          highlights={ranges}
-          activeHighlightId={activeHighlightId}
-          onHighlightClick={setActiveHighlightId}
-          onSelect={onSelectionInside}
-          onProgress={onProgress}
+      <div className="min-w-0 space-y-4">
+        <div className="rounded-lg border border-border/60 bg-card/20 px-8 py-10">
+          <MarkdownReader
+            markdown={page.body}
+            pageStart={page.start}
+            pageEnd={page.end}
+            highlights={ranges}
+            activeHighlightId={activeHighlightId}
+            onHighlightClick={jumpToHighlight}
+            onSelect={onSelectionInside}
+          />
+        </div>
+
+        <PageControls
+          currentPage={currentPage}
+          pageCount={pageCount}
+          onPrev={goPrev}
+          onNext={goNext}
+          onJump={setCurrentPage}
         />
       </div>
+
       <aside className="lg:sticky lg:top-4 lg:h-fit">
         <HighlightSidebar
           highlights={highlights}
           activeId={activeHighlightId}
-          onClickItem={setActiveHighlightId}
+          highlightsOnPage={highlightsOnPage}
+          onClickItem={jumpToHighlight}
           onDelete={onDeleteHighlight}
           onPromote={onPromoteHighlight}
         />
       </aside>
+    </div>
+  );
+}
+
+function PageControls({
+  currentPage,
+  pageCount,
+  onPrev,
+  onNext,
+  onJump,
+}: {
+  currentPage: number;
+  pageCount: number;
+  onPrev: () => void;
+  onNext: () => void;
+  onJump: (p: number) => void;
+}) {
+  const [jumpValue, setJumpValue] = React.useState("");
+
+  function submitJump(e: React.FormEvent) {
+    e.preventDefault();
+    const n = Number(jumpValue);
+    if (Number.isFinite(n) && n >= 1 && n <= pageCount) {
+      onJump(Math.round(n) - 1);
+      setJumpValue("");
+    }
+  }
+
+  if (pageCount <= 1) return null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/30 px-4 py-2 text-sm">
+      <button
+        onClick={onPrev}
+        disabled={currentPage === 0}
+        className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        ← 上一页
+      </button>
+
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>
+          第 <span className="font-medium text-foreground tabular-nums">{currentPage + 1}</span> / {pageCount} 页
+        </span>
+        <form onSubmit={submitJump} className="flex items-center gap-1">
+          <input
+            type="text"
+            value={jumpValue}
+            onChange={(e) => setJumpValue(e.target.value)}
+            placeholder="跳到"
+            className="w-14 rounded border border-border bg-background px-1.5 py-0.5 text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </form>
+        <span className="text-[10px] text-muted-foreground/60">
+          ← → 翻页
+        </span>
+      </div>
+
+      <button
+        onClick={onNext}
+        disabled={currentPage >= pageCount - 1}
+        className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        下一页 →
+      </button>
     </div>
   );
 }
@@ -892,12 +1062,14 @@ function FloatingToolbar({
 function HighlightSidebar({
   highlights,
   activeId,
+  highlightsOnPage,
   onClickItem,
   onDelete,
   onPromote,
 }: {
   highlights: Highlight[];
   activeId: string | null;
+  highlightsOnPage?: number;
   onClickItem: (id: string) => void;
   onDelete: (id: string) => void;
   onPromote: (id: string) => void;
@@ -906,7 +1078,11 @@ function HighlightSidebar({
     <div className="rounded-lg border border-border/60 bg-card/40 p-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          高亮 ({highlights.length})
+          高亮 ({highlights.length}
+          {typeof highlightsOnPage === "number" && highlightsOnPage > 0
+            ? ` · ${highlightsOnPage} 在本页`
+            : ""}
+          )
         </div>
       </div>
       {highlights.length === 0 ? (
