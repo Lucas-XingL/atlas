@@ -4,6 +4,7 @@ import { decodeSlug } from "@/lib/slug";
 import { resolveLlmConfig } from "@/lib/ai/resolve-config";
 import { generateLearningPath } from "@/lib/ai/path-generator";
 import { backfillResourceUrls } from "@/lib/ai/backfill-urls";
+import { preflightResourceUrls } from "@/lib/ai/preflight-urls";
 import type { Atlas } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -89,7 +90,8 @@ export async function POST(_req: Request, { params }: { params: { slug: string }
     if (stage.resources.length === 0) continue;
 
     const withUrls = await backfillResourceUrls(stage.resources);
-    const resourceRows = withUrls.map((r, rIdx) => ({
+    const checked = await preflightResourceUrls(withUrls);
+    const resourceRows = checked.map((r, rIdx) => ({
       stage_id: stageRow.id,
       res_order: rIdx,
       tier: r.tier,

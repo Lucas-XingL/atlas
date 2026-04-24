@@ -14,7 +14,7 @@ export async function processSourceById(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const { data: src, error: fetchErr } = await supabase
     .from("sources")
-    .select("id, url, summary")
+    .select("id, url, summary, path_resource_id")
     .eq("id", sourceId)
     .maybeSingle();
 
@@ -54,6 +54,16 @@ export async function processSourceById(
       .from("sources")
       .update({ summary: mergedSummary, fetch_status: "ready", fetch_error: null })
       .eq("id", sourceId);
+
+    // Bump the linked path resource from 'accepted' to 'reading' now that
+    // there's real content the user can start reading.
+    if (src.path_resource_id) {
+      await supabase
+        .from("path_resources")
+        .update({ user_status: "reading" })
+        .eq("id", src.path_resource_id)
+        .eq("user_status", "accepted");
+    }
 
     return { ok: true };
   } catch (err) {

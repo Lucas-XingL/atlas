@@ -3,28 +3,55 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ExternalLink, Check, Sparkles, Trash2, X, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ExternalLink,
+  FileText,
+  Globe,
+  Loader2,
+  PenLine,
+  RefreshCw,
+  Sparkles,
+  Trash2,
+  Upload,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import type { Highlight, Source, SourceSummary } from "@/lib/types";
+import { Textarea } from "@/components/ui/textarea";
+import { cn, formatRelative } from "@/lib/utils";
+import { PdfUploadDialog } from "@/components/pdf-upload-dialog";
+import type {
+  Highlight,
+  JournalEntry,
+  Source,
+  SourceSummary,
+} from "@/lib/types";
 import { MarkdownReader, type HighlightRange } from "./markdown-reader";
+
+type ReaderView = "markdown" | "iframe";
 
 export function SourceReaderClient({
   slug,
-  source,
+  source: initialSource,
   initialHighlights,
+  initialSourceJournals,
 }: {
   slug: string;
   source: Source;
   initialHighlights: Highlight[];
+  initialSourceJournals: JournalEntry[];
 }) {
   const router = useRouter();
+  const [source, setSource] = React.useState<Source>(initialSource);
   const [highlights, setHighlights] = React.useState<Highlight[]>(initialHighlights);
-  const [progress, setProgress] = React.useState<number>(source.reading_progress);
+  const [sourceJournals, setSourceJournals] =
+    React.useState<JournalEntry[]>(initialSourceJournals);
+  const [progress, setProgress] = React.useState<number>(initialSource.reading_progress);
   const [activeHighlightId, setActiveHighlightId] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [view, setView] = React.useState<ReaderView>("markdown");
 
-  // Floating toolbar state driven by selection
   const [toolbar, setToolbar] = React.useState<{
     x: number;
     y: number;
@@ -33,44 +60,98 @@ export function SourceReaderClient({
     end: number;
   } | null>(null);
 
-  const readerRef = React.useRef<HTMLDivElement>(null);
-
-  async function saveProgress(pct: number) {
-    // Called heavily — keep the request tiny and don't await the UI state.
-    try {
-      await fetch(`/api/sources/${source.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reading_progress: pct }),
+  // ------------------------------------------------------------------
+  // 1. Auto-drive fetching for a pending consumable-with-url source.
+  //    Fires once on mount; progress is observed via polling below.
+  // ------------------------------------------------------------------
+  const didKickProcess = React.useRef(false);
+  React.useEffect(() => {
+    if (didKickProcess.current) return;
+    if (
+      source.fetch_status === "pending" &&
+      source.url &&
+      source.resource_type === "consumable"
+    ) {
+      didKickProcess.current = true;
+      // Fire-and-forget; the poll below will pick up the status update.
+      fetch(`/api/sources/${source.id}/process`, { method: "POST" }).catch(() => {
+        /* swallow; failed status will surface via polling */
       });
-    } catch {
-      /* ignore */
     }
-  }
+  }, [source.fetch_status, source.id, source.url, source.resource_type]);
 
-  // Debounced progress save
+  // ------------------------------------------------------------------
+  // 2. Poll for status transitions while the source is not final.
+  // ------------------------------------------------------------------
+  const isTransient =
+    source.fetch_status === "pending" ||
+    source.fetch_status === "fetching" ||
+    source.fetch_status === "summarizing";
+
+  React.useEffect(() => {
+    if (!isTransient) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetch(`/api/sources/${source.id}`);
+        if (!res.ok) return;
+        const j = await res.json();
+        if (!cancelled && j.source) {
+          setSource(j.source as Source);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    const int = setInterval(tick, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(int);
+    };
+  }, [isTransient, source.id]);
+
+  // ------------------------------------------------------------------
+  // 3. Progress save (used only in markdown mode).
+  // ------------------------------------------------------------------
   const progressDebounceRef = React.useRef<NodeJS.Timeout | null>(null);
   function updateProgress(pct: number) {
     setProgress(pct);
     if (progressDebounceRef.current) clearTimeout(progressDebounceRef.current);
-    progressDebounceRef.current = setTimeout(() => saveProgress(pct), 1000);
+    progressDebounceRef.current = setTimeout(() => {
+      fetch(`/api/sources/${source.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reading_progress: pct }),
+      }).catch(() => {
+        /* ignore */
+      });
+    }, 1000);
   }
 
   async function markRead() {
     setBusy(true);
     try {
-      await fetch(`/api/sources/${source.id}`, {
+      const r = await fetch(`/api/sources/${source.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "read", reading_progress: 100 }),
       });
-      setProgress(100);
+      if (r.ok) {
+        const j = await r.json();
+        if (j.source) setSource(j.source as Source);
+        setProgress(100);
+      }
     } finally {
       setBusy(false);
     }
   }
 
-  function onSelectionInside(sel: { text: string; start: number; end: number; rect: DOMRect } | null) {
+  // ------------------------------------------------------------------
+  // 4. Highlight management (markdown mode).
+  // ------------------------------------------------------------------
+  function onSelectionInside(
+    sel: { text: string; start: number; end: number; rect: DOMRect } | null
+  ) {
     if (!sel || sel.text.trim().length === 0) {
       setToolbar(null);
       return;
@@ -130,7 +211,7 @@ export function SourceReaderClient({
     if (activeHighlightId === id) setActiveHighlightId(null);
   }
 
-  async function promoteToJournal(id: string) {
+  async function promoteHighlightToJournal(id: string) {
     const res = await fetch(`/api/highlights/${id}/to-journal`, { method: "POST" });
     const j = await res.json();
     if (res.ok) {
@@ -140,13 +221,86 @@ export function SourceReaderClient({
     }
   }
 
+  // ------------------------------------------------------------------
+  // 5. Source-level journal (used in both modes, but especially NoContent).
+  // ------------------------------------------------------------------
+  async function addSourceJournal(text: string) {
+    const res = await fetch(`/api/atlases/${slug}/journal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, source_ref: source.id }),
+    });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      alert(`保存随记失败: ${j.error ?? res.status}`);
+      return;
+    }
+    const j = await res.json();
+    setSourceJournals((prev) => [j.entry as JournalEntry, ...prev]);
+  }
+
+  async function removeSourceJournal(id: string) {
+    const res = await fetch(`/api/journal/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      alert(`删除失败: ${j.error ?? res.status}`);
+      return;
+    }
+    setSourceJournals((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  // ------------------------------------------------------------------
+  // 6. Recovery actions (retry fetch, paste, upload pdf).
+  // ------------------------------------------------------------------
+  const [pdfOpen, setPdfOpen] = React.useState(false);
+  const [pasteOpen, setPasteOpen] = React.useState(false);
+
+  async function retryFetch() {
+    if (!source.url) return;
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/sources/${source.id}/process`, { method: "POST" });
+      if (r.ok) {
+        const j = await r.json();
+        if (j.source) setSource(j.source as Source);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitPaste(text: string) {
+    setBusy(true);
+    try {
+      const r = await fetch(`/api/sources/${source.id}/paste`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, title: source.title }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        alert(`保存失败: ${j.error ?? r.status}`);
+        return;
+      }
+      const j = await r.json();
+      if (j.source) setSource(j.source as Source);
+      setPasteOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const ranges: HighlightRange[] = highlights.map((h) => ({
     id: h.id,
     start: h.start_offset,
     end: h.end_offset,
   }));
 
-  const hasContent = source.raw_content && source.raw_content.length > 0;
+  const hasContent = !!source.raw_content && source.raw_content.length > 0;
+
+  // ------------------------------------------------------------------
+  // Render
+  // ------------------------------------------------------------------
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-8 lg:py-8">
@@ -158,19 +312,26 @@ export function SourceReaderClient({
           <ArrowLeft className="h-4 w-4" /> 返回阅读清单
         </Link>
         <div className="flex items-center gap-2">
-          <div className="text-xs tabular-nums text-muted-foreground">
-            已读 {progress}%
-          </div>
-          {progress < 100 ? (
-            <Button size="sm" variant="outline" onClick={markRead} disabled={busy}>
-              <Check className="h-3.5 w-3.5" />
-              标记已读
-            </Button>
-          ) : (
-            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
-              <Check className="h-3 w-3" /> 已读完
-            </span>
-          )}
+          {hasContent && source.url && source.resource_type === "consumable" ? (
+            <ReaderViewToggle view={view} onChange={setView} />
+          ) : null}
+          {hasContent || sourceJournals.length > 0 ? (
+            <div className="flex items-center gap-2">
+              <div className="text-xs tabular-nums text-muted-foreground">
+                已读 {progress}%
+              </div>
+              {progress < 100 ? (
+                <Button size="sm" variant="outline" onClick={markRead} disabled={busy}>
+                  <Check className="h-3.5 w-3.5" />
+                  标记已读
+                </Button>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+                  <Check className="h-3 w-3" /> 已读完
+                </span>
+              )}
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -199,42 +360,54 @@ export function SourceReaderClient({
           </a>
         ) : null}
         <SummaryBlock summary={source.summary} />
-        <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
-          <div
-            className="h-full bg-primary transition-all"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
-
-      {/* Reader + sidebar */}
-      {hasContent ? (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr),320px]">
-          <div ref={readerRef} className="min-w-0 rounded-lg border border-border/60 bg-card/20 p-6">
-            <MarkdownReader
-              markdown={source.raw_content!}
-              highlights={ranges}
-              activeHighlightId={activeHighlightId}
-              onHighlightClick={setActiveHighlightId}
-              onSelect={onSelectionInside}
-              onProgress={updateProgress}
+        {(hasContent || sourceJournals.length > 0) && progress > 0 ? (
+          <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full bg-primary transition-all"
+              style={{ width: `${progress}%` }}
             />
           </div>
-          <aside className="lg:sticky lg:top-4 lg:h-fit">
-            <HighlightSidebar
-              highlights={highlights}
-              activeId={activeHighlightId}
-              onClickItem={setActiveHighlightId}
-              onDelete={removeHighlight}
-              onPromote={promoteToJournal}
-            />
-          </aside>
-        </div>
+        ) : null}
+      </div>
+
+      {/* Body — pick mode */}
+      {isTransient ? (
+        <LoadingMode source={source} />
+      ) : hasContent && view === "iframe" && source.url ? (
+        <IframeMode
+          slug={slug}
+          source={source}
+          journals={sourceJournals}
+          onAddJournal={addSourceJournal}
+          onRemoveJournal={removeSourceJournal}
+        />
+      ) : hasContent ? (
+        <MarkdownMode
+          source={source}
+          highlights={highlights}
+          ranges={ranges}
+          activeHighlightId={activeHighlightId}
+          setActiveHighlightId={setActiveHighlightId}
+          onSelectionInside={onSelectionInside}
+          onProgress={updateProgress}
+          onDeleteHighlight={removeHighlight}
+          onPromoteHighlight={promoteHighlightToJournal}
+        />
       ) : (
-        <EmptyContentHint slug={slug} source={source} />
+        <NoContentMode
+          source={source}
+          slug={slug}
+          journals={sourceJournals}
+          busy={busy}
+          onRetryFetch={retryFetch}
+          onOpenPaste={() => setPasteOpen(true)}
+          onOpenPdf={() => setPdfOpen(true)}
+          onAddJournal={addSourceJournal}
+          onRemoveJournal={removeSourceJournal}
+        />
       )}
 
-      {/* Floating toolbar */}
+      {/* Floating toolbar only appears in markdown mode via its selection events */}
       {toolbar ? (
         <FloatingToolbar
           x={toolbar.x}
@@ -245,9 +418,282 @@ export function SourceReaderClient({
           busy={busy}
         />
       ) : null}
+
+      {/* Paste dialog */}
+      {pasteOpen ? (
+        <PasteDialog
+          title={source.title}
+          onClose={() => setPasteOpen(false)}
+          onSubmit={submitPaste}
+          busy={busy}
+        />
+      ) : null}
+
+      {/* PDF upload dialog (works for any source — even non-physical ones that
+          want to attach a PDF of the same article). */}
+      <PdfUploadDialog
+        open={pdfOpen}
+        resourceTitle={source.title}
+        onClose={() => setPdfOpen(false)}
+        createSource={async () => source.id}
+        onIngested={() => {
+          setPdfOpen(false);
+          router.refresh();
+        }}
+      />
     </div>
   );
 }
+
+// ----------------------------------------------------------------------
+// Sub-views
+// ----------------------------------------------------------------------
+
+function LoadingMode({ source }: { source: Source }) {
+  const label: Record<Source["fetch_status"], string> = {
+    pending: "排队中…",
+    fetching: "抓取正文中…",
+    summarizing: "AI 生成摘要中…",
+    ready: "准备就绪",
+    failed: "抓取失败",
+  };
+  return (
+    <div className="rounded-lg border border-border/60 bg-card/20 p-10">
+      <div className="flex items-center gap-3 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        {label[source.fetch_status]}
+      </div>
+      <div className="mt-6 space-y-3">
+        <div className="h-3 w-4/5 animate-pulse rounded bg-muted/60" />
+        <div className="h-3 w-3/5 animate-pulse rounded bg-muted/60" />
+        <div className="h-3 w-11/12 animate-pulse rounded bg-muted/60" />
+        <div className="h-3 w-2/3 animate-pulse rounded bg-muted/60" />
+      </div>
+      <p className="mt-6 text-xs text-muted-foreground">
+        需要 10-30 秒 · 完成后页面会自动刷新
+      </p>
+    </div>
+  );
+}
+
+function MarkdownMode({
+  source,
+  highlights,
+  ranges,
+  activeHighlightId,
+  setActiveHighlightId,
+  onSelectionInside,
+  onProgress,
+  onDeleteHighlight,
+  onPromoteHighlight,
+}: {
+  source: Source;
+  highlights: Highlight[];
+  ranges: HighlightRange[];
+  activeHighlightId: string | null;
+  setActiveHighlightId: (id: string | null) => void;
+  onSelectionInside: (sel: { text: string; start: number; end: number; rect: DOMRect } | null) => void;
+  onProgress: (pct: number) => void;
+  onDeleteHighlight: (id: string) => void;
+  onPromoteHighlight: (id: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr),320px]">
+      <div className="min-w-0 rounded-lg border border-border/60 bg-card/20 p-6">
+        <MarkdownReader
+          markdown={source.raw_content!}
+          highlights={ranges}
+          activeHighlightId={activeHighlightId}
+          onHighlightClick={setActiveHighlightId}
+          onSelect={onSelectionInside}
+          onProgress={onProgress}
+        />
+      </div>
+      <aside className="lg:sticky lg:top-4 lg:h-fit">
+        <HighlightSidebar
+          highlights={highlights}
+          activeId={activeHighlightId}
+          onClickItem={setActiveHighlightId}
+          onDelete={onDeleteHighlight}
+          onPromote={onPromoteHighlight}
+        />
+      </aside>
+    </div>
+  );
+}
+
+function IframeMode({
+  source,
+  journals,
+  onAddJournal,
+  onRemoveJournal,
+}: {
+  slug: string;
+  source: Source;
+  journals: JournalEntry[];
+  onAddJournal: (text: string) => Promise<void>;
+  onRemoveJournal: (id: string) => Promise<void>;
+}) {
+  // iframes get blocked by many sites via X-Frame-Options / CSP.
+  // Provide a hard fallback: detect load failure with a timeout and offer an
+  // escape hatch.
+  const [blocked, setBlocked] = React.useState(false);
+  const iframeRef = React.useRef<HTMLIFrameElement>(null);
+  const loadedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!loadedRef.current) setBlocked(true);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [source.url]);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr),380px]">
+      <div className="relative min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card/20">
+        {blocked ? (
+          <div className="flex h-[720px] flex-col items-center justify-center gap-3 p-8 text-center">
+            <Globe className="h-8 w-8 text-muted-foreground" />
+            <div className="text-sm text-foreground">
+              这个网站不允许被嵌入阅读
+            </div>
+            <p className="max-w-md text-xs text-muted-foreground">
+              很多站点（知乎、微信公众号、付费文章）通过 X-Frame-Options
+              禁止 iframe 嵌入。点下方按钮去原网页阅读，右侧随手记随记即可。
+            </p>
+            <a
+              href={source.url ?? "#"}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm text-primary hover:bg-primary/20"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> 在新标签打开
+            </a>
+          </div>
+        ) : (
+          <iframe
+            ref={iframeRef}
+            src={source.url ?? ""}
+            className="h-[720px] w-full bg-white"
+            onLoad={() => {
+              loadedRef.current = true;
+            }}
+            sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+            referrerPolicy="no-referrer"
+          />
+        )}
+      </div>
+      <aside className="lg:sticky lg:top-4 lg:h-fit">
+        <JournalSidePanel
+          journals={journals}
+          onAdd={onAddJournal}
+          onRemove={onRemoveJournal}
+          hint="边读边记 · 每条独立保存"
+        />
+      </aside>
+    </div>
+  );
+}
+
+function NoContentMode({
+  source,
+  journals,
+  busy,
+  onRetryFetch,
+  onOpenPaste,
+  onOpenPdf,
+  onAddJournal,
+  onRemoveJournal,
+}: {
+  source: Source;
+  slug: string;
+  journals: JournalEntry[];
+  busy: boolean;
+  onRetryFetch: () => void;
+  onOpenPaste: () => void;
+  onOpenPdf: () => void;
+  onAddJournal: (text: string) => Promise<void>;
+  onRemoveJournal: (id: string) => Promise<void>;
+}) {
+  const isFailed = source.fetch_status === "failed";
+  const canRetry = !!source.url && source.resource_type === "consumable";
+
+  const hint =
+    source.resource_type === "physical"
+      ? "这是一本实体书 · 边读边把要点记进来，或上传 PDF 版本让 AI 一起解析。"
+      : source.resource_type === "external"
+        ? "这是需要外部观看的资源（视频/播客/付费文章）· 边看边记要点即可。"
+        : isFailed
+          ? `抓取失败${source.fetch_error ? `：${source.fetch_error}` : ""} · 可以重试，也可以直接用随记的方式读。`
+          : "这条源没有可抓取的正文 · 边读边记就够，或粘贴要点让 AI 帮你整理摘要。";
+
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr),380px]">
+      {/* Left: guidance + recovery actions */}
+      <div className="min-w-0 space-y-4">
+        <div
+          className={cn(
+            "rounded-lg border p-5",
+            isFailed
+              ? "border-destructive/30 bg-destructive/5"
+              : "border-primary/20 bg-primary/5"
+          )}
+        >
+          <div className="flex items-start gap-3">
+            <PenLine className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium">
+                {isFailed ? "无法抓到正文" : "这条源不支持直接阅读"}
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+            </div>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {canRetry ? (
+              <Button size="sm" variant="outline" onClick={onRetryFetch} disabled={busy}>
+                {busy ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                重试抓取
+              </Button>
+            ) : null}
+            <Button size="sm" variant="outline" onClick={onOpenPdf} disabled={busy}>
+              <Upload className="h-3.5 w-3.5" /> 上传 PDF
+            </Button>
+            <Button size="sm" variant="outline" onClick={onOpenPaste} disabled={busy}>
+              <FileText className="h-3.5 w-3.5" /> 粘贴要点
+            </Button>
+          </div>
+        </div>
+
+        {/* Inline journal input — large, the primary affordance */}
+        <div className="rounded-lg border border-border/60 bg-card/30 p-5">
+          <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <PenLine className="h-3 w-3" /> 边读边记
+          </div>
+          <JournalComposer onSubmit={onAddJournal} placeholder="一次一条小想法 · Enter 换行，Cmd/Ctrl+Enter 保存" />
+        </div>
+      </div>
+
+      {/* Right: journal list (same content as left composer's list, so user
+          sees history without scrolling away from composer). */}
+      <aside className="lg:sticky lg:top-4 lg:h-fit">
+        <JournalSidePanel
+          journals={journals}
+          onAdd={null}
+          onRemove={onRemoveJournal}
+          hint={`${journals.length} 条随记`}
+        />
+      </aside>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Shared widgets
+// ----------------------------------------------------------------------
 
 function SummaryBlock({ summary }: { summary: SourceSummary }) {
   if (!summary?.tl_dr && !summary?.why_relevant) return null;
@@ -268,25 +714,6 @@ function SummaryBlock({ summary }: { summary: SourceSummary }) {
           ))}
         </ul>
       ) : null}
-    </div>
-  );
-}
-
-function EmptyContentHint({ slug, source }: { slug: string; source: Source }) {
-  return (
-    <div className="rounded-lg border border-dashed border-border p-10 text-center">
-      <div className="text-sm text-muted-foreground">
-        这个 source 还没有抓到正文
-        {source.resource_type !== "consumable"
-          ? "（需要用户外部消化后粘要点）"
-          : "（可能是抓取失败）"}
-      </div>
-      <Link
-        href={`/app/atlases/${slug}/reading`}
-        className="mt-3 inline-block text-sm text-primary hover:underline"
-      >
-        回到阅读清单 · 点「粘贴正文」
-      </Link>
     </div>
   );
 }
@@ -405,6 +832,228 @@ function HighlightSidebar({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function JournalSidePanel({
+  journals,
+  onAdd,
+  onRemove,
+  hint,
+}: {
+  journals: JournalEntry[];
+  onAdd: ((text: string) => Promise<void>) | null;
+  onRemove: (id: string) => Promise<void>;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-card/40 p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          随记
+        </div>
+        <span className="text-[10px] text-muted-foreground">{hint}</span>
+      </div>
+
+      {onAdd ? (
+        <div className="mb-3">
+          <JournalComposer onSubmit={onAdd} compact placeholder="新的想法…" />
+        </div>
+      ) : null}
+
+      {journals.length === 0 ? (
+        <div className="py-6 text-center text-xs text-muted-foreground">
+          还没有随记
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {journals.map((j) => (
+            <li
+              key={j.id}
+              className="group rounded-md border border-border/50 bg-background/40 p-2"
+            >
+              <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">
+                {j.text}
+              </div>
+              <div className="mt-1.5 flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground">
+                  {formatRelative(j.created_at)}
+                  {j.status !== "raw" ? (
+                    <span className="ml-1 inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 text-[9px] text-primary">
+                      <Sparkles className="h-2.5 w-2.5" />
+                      {j.status === "distilled" ? "已蒸馏" : j.status}
+                    </span>
+                  ) : null}
+                </span>
+                {j.status === "raw" ? (
+                  <button
+                    onClick={() => {
+                      if (confirm("删除这条随记？")) onRemove(j.id);
+                    }}
+                    className="text-[10px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-destructive"
+                  >
+                    删除
+                  </button>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function JournalComposer({
+  onSubmit,
+  placeholder,
+  compact,
+}: {
+  onSubmit: (text: string) => Promise<void>;
+  placeholder: string;
+  compact?: boolean;
+}) {
+  const [text, setText] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  async function submit() {
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return;
+    setBusy(true);
+    try {
+      await onSubmit(trimmed);
+      setText("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      submit();
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={onKey}
+        placeholder={placeholder}
+        rows={compact ? 2 : 4}
+        disabled={busy}
+      />
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-muted-foreground">
+          {text.length > 0 ? `${text.length} 字` : ""}
+        </span>
+        <Button size="sm" onClick={submit} disabled={busy || text.trim().length === 0}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "保存"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ReaderViewToggle({
+  view,
+  onChange,
+}: {
+  view: ReaderView;
+  onChange: (v: ReaderView) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-border/60 bg-card/50 text-xs">
+      <button
+        onClick={() => onChange("markdown")}
+        className={cn(
+          "px-2 py-1 transition-colors",
+          view === "markdown"
+            ? "bg-primary/15 text-primary"
+            : "text-muted-foreground hover:text-foreground"
+        )}
+      >
+        Markdown
+      </button>
+      <button
+        onClick={() => onChange("iframe")}
+        className={cn(
+          "px-2 py-1 transition-colors",
+          view === "iframe"
+            ? "bg-primary/15 text-primary"
+            : "text-muted-foreground hover:text-foreground"
+        )}
+      >
+        原网页
+      </button>
+    </div>
+  );
+}
+
+function PasteDialog({
+  title,
+  onClose,
+  onSubmit,
+  busy,
+}: {
+  title: string;
+  onClose: () => void;
+  onSubmit: (text: string) => Promise<void>;
+  busy: boolean;
+}) {
+  const [text, setText] = React.useState("");
+  const disabled = text.trim().length < 20 || busy;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-2xl rounded-lg border border-border bg-background p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold">粘贴正文或要点</h3>
+            <p className="mt-1 truncate text-xs text-muted-foreground">{title}</p>
+          </div>
+          <button
+            onClick={onClose}
+            disabled={busy}
+            aria-label="关闭"
+            className="text-muted-foreground hover:text-foreground disabled:opacity-40"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <Textarea
+            rows={12}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="粘贴章节要点 / 核心观点 / 摘抄（≥20 字）… AI 会帮你生成摘要并归档到知识库。"
+            disabled={busy}
+          />
+          <div className="text-[10px] text-muted-foreground">
+            {text.trim().length} 字 · 至少 20 字
+          </div>
+        </div>
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>
+            取消
+          </Button>
+          <Button size="sm" onClick={() => onSubmit(text.trim())} disabled={disabled}>
+            {busy ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                保存中…
+              </>
+            ) : (
+              "保存并生成摘要"
+            )}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

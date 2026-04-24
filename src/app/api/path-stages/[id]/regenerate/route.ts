@@ -4,6 +4,7 @@ import { createSupabaseServer } from "@/lib/supabase/server";
 import { resolveLlmConfig } from "@/lib/ai/resolve-config";
 import { generateStageResources } from "@/lib/ai/path-generator";
 import { backfillResourceUrls } from "@/lib/ai/backfill-urls";
+import { preflightResourceUrls } from "@/lib/ai/preflight-urls";
 import type { Atlas } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -87,6 +88,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   const withUrls = await backfillResourceUrls(resources);
+  const checked = await preflightResourceUrls(withUrls);
 
   // Replace the stage's resources atomically (best-effort; RLS guards cascade)
   const { error: delErr } = await supabase
@@ -97,7 +99,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: `cleanup failed: ${delErr.message}` }, { status: 500 });
   }
 
-  const rows = withUrls.map((r, idx) => ({
+  const rows = checked.map((r, idx) => ({
     stage_id: stage.id,
     res_order: idx,
     tier: r.tier,

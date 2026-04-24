@@ -4,8 +4,26 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { BookOpen, ExternalLink, Loader2, Trash2, Search, Play, Check, Sparkles } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  BookOpen,
+  ExternalLink,
+  Loader2,
+  Trash2,
+  Search,
+  Play,
+  Check,
+  Sparkles,
+  MoreHorizontal,
+  Eye,
+  RotateCcw,
+  Undo2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PdfUploadDialog } from "@/components/pdf-upload-dialog";
 import { StageRegenerateDialog } from "@/components/stage-regenerate-dialog";
@@ -25,18 +43,11 @@ const TYPE_META: Record<ResourceType, { label: string; icon: React.ReactNode }> 
 
 const STATUS_META: Record<PathResourceUserStatus, { label: string; tone: string }> = {
   suggested: { label: "待开始", tone: "text-muted-foreground" },
-  accepted: { label: "待开始", tone: "text-muted-foreground" },
+  accepted: { label: "待上传", tone: "text-amber-400" },
   reading: { label: "读中", tone: "text-primary" },
   finished: { label: "已读完", tone: "text-emerald-400" },
   skipped: { label: "已跳过", tone: "text-muted-foreground/60" },
 };
-
-const STATUS_CHOICES: { value: PathResourceUserStatus; label: string }[] = [
-  { value: "suggested", label: "待开始" },
-  { value: "reading", label: "读中" },
-  { value: "finished", label: "已读完" },
-  { value: "skipped", label: "已跳过" },
-];
 
 export function PathClient({
   slug,
@@ -260,12 +271,12 @@ function ResourceRow({
   slug: string;
   onChange: () => void;
 }) {
+  const router = useRouter();
   const [busy, setBusy] = React.useState(false);
   const [pdfOpen, setPdfOpen] = React.useState(false);
   const typeMeta = TYPE_META[r.resource_type];
   const statusMeta = STATUS_META[r.user_status];
 
-  // For physical (books), we open a PDF upload dialog instead of the default accept
   async function acceptAndReturnSourceId(): Promise<string> {
     const res = await fetch(`/api/path-resources/${r.id}/accept`, { method: "POST" });
     const j = await res.json();
@@ -273,7 +284,7 @@ function ResourceRow({
     return j.source_id as string;
   }
 
-  async function accept() {
+  async function startReading() {
     if (r.resource_type === "physical") {
       setPdfOpen(true);
       return;
@@ -282,14 +293,23 @@ function ResourceRow({
     try {
       const res = await fetch(`/api/path-resources/${r.id}/accept`, { method: "POST" });
       const j = await res.json();
-      if (res.ok && j.source_id) {
-        window.location.href = `/app/atlases/${slug}/reading`;
-      } else {
+      if (!res.ok || !j.source_id) {
         alert(`开始失败: ${j.error ?? "未知错误"}`);
         onChange();
+        return;
       }
+      // Go straight into the reader — the page handles fetch_status=pending.
+      router.push(`/app/atlases/${slug}/reading/${j.source_id}`);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function viewInReader() {
+    if (r.source_id) {
+      router.push(`/app/atlases/${slug}/reading/${r.source_id}`);
+    } else {
+      router.push(`/app/atlases/${slug}/reading`);
     }
   }
 
@@ -297,11 +317,15 @@ function ResourceRow({
     if (next === r.user_status) return;
     setBusy(true);
     try {
-      await fetch(`/api/path-resources/${r.id}`, {
+      const res = await fetch(`/api/path-resources/${r.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_status: next }),
       });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        alert(`更新状态失败: ${j.error ?? res.status}`);
+      }
       onChange();
     } finally {
       setBusy(false);
@@ -381,47 +405,15 @@ function ResourceRow({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 flex-col items-end gap-1.5">
-        {!r.source_id && !isFinished && !isSkipped ? (
-          <Button size="sm" onClick={accept} disabled={busy}>
-            {busy ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <>
-                <Play className="h-3 w-3" />
-                开始读
-              </>
-            )}
-          </Button>
-        ) : null}
-        {r.source_id ? (
-          <a
-            href={`/app/atlases/${slug}/reading`}
-            className="rounded border border-border bg-background px-2 py-1 text-[11px] hover:border-foreground/40"
-          >
-            查看
-          </a>
-        ) : null}
-        <select
-          value={r.user_status === "accepted" ? "suggested" : r.user_status}
-          onChange={(e) => updateStatus(e.target.value as PathResourceUserStatus)}
-          disabled={busy}
-          className="rounded border border-border bg-background px-1.5 py-1 text-[11px] text-muted-foreground hover:border-foreground/40 focus:outline-none focus:ring-1 focus:ring-ring"
-          aria-label="修改状态"
-        >
-          {STATUS_CHOICES.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-        <button
-          onClick={remove}
-          disabled={busy}
-          className="text-[11px] text-muted-foreground hover:text-destructive"
-        >
-          删除
-        </button>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <StatusActions
+          resource={r}
+          busy={busy}
+          onStart={startReading}
+          onView={viewInReader}
+          onChangeStatus={updateStatus}
+          onRemove={remove}
+        />
       </div>
     </div>
     {r.resource_type === "physical" ? (
@@ -430,12 +422,118 @@ function ResourceRow({
         resourceTitle={r.title}
         onClose={() => setPdfOpen(false)}
         createSource={acceptAndReturnSourceId}
-        onIngested={() => {
+        onIngested={(sourceId) => {
           setPdfOpen(false);
-          window.location.href = `/app/atlases/${slug}/reading`;
+          router.push(`/app/atlases/${slug}/reading/${sourceId}`);
         }}
       />
     ) : null}
+    </>
+  );
+}
+
+/**
+ * State-driven action cluster. Each state shows only the buttons that make
+ * sense; the kebab menu surfaces the lateral transitions so the happy-path
+ * button stays the obvious click.
+ */
+function StatusActions({
+  resource: r,
+  busy,
+  onStart,
+  onView,
+  onChangeStatus,
+  onRemove,
+}: {
+  resource: PathResource;
+  busy: boolean;
+  onStart: () => void;
+  onView: () => void;
+  onChangeStatus: (s: PathResourceUserStatus) => void;
+  onRemove: () => void;
+}) {
+  const status = r.user_status;
+  const hasSource = !!r.source_id;
+
+  const kebab = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          disabled={busy}
+          aria-label="更多操作"
+          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {status === "reading" || status === "accepted" ? (
+          <>
+            <DropdownMenuItem onSelect={() => onChangeStatus("finished")}>
+              <Check className="h-3 w-3" /> 标为已读
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => onChangeStatus("skipped")}>
+              <Undo2 className="h-3 w-3" /> 跳过
+            </DropdownMenuItem>
+          </>
+        ) : null}
+        {status === "finished" ? (
+          <DropdownMenuItem onSelect={() => onChangeStatus("reading")}>
+            <RotateCcw className="h-3 w-3" /> 重新打开
+          </DropdownMenuItem>
+        ) : null}
+        {status === "suggested" ? (
+          <DropdownMenuItem onSelect={() => onChangeStatus("skipped")}>
+            <Undo2 className="h-3 w-3" /> 跳过
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuItem onSelect={onRemove} destructive>
+          <Trash2 className="h-3 w-3" /> 删除
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  if (status === "skipped") {
+    return (
+      <>
+        <Button size="sm" variant="outline" onClick={() => onChangeStatus("suggested")} disabled={busy}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><RotateCcw className="h-3 w-3" /> 恢复</>}
+        </Button>
+        {kebab}
+      </>
+    );
+  }
+
+  if (status === "finished") {
+    return (
+      <>
+        <Button size="sm" variant="outline" onClick={onView} disabled={busy}>
+          <Eye className="h-3 w-3" /> 查看
+        </Button>
+        {kebab}
+      </>
+    );
+  }
+
+  if (status === "reading" || (status === "accepted" && hasSource)) {
+    return (
+      <>
+        <Button size="sm" onClick={onView} disabled={busy}>
+          <Play className="h-3 w-3" /> 继续阅读
+        </Button>
+        {kebab}
+      </>
+    );
+  }
+
+  // suggested (or unusual accepted-without-source fallback)
+  return (
+    <>
+      <Button size="sm" onClick={onStart} disabled={busy}>
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><Play className="h-3 w-3" /> 开始读</>}
+      </Button>
+      {kebab}
     </>
   );
 }

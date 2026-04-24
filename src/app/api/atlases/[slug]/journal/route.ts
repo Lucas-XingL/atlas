@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 
 const postSchema = z.object({
   text: z.string().min(1).max(4000),
+  source_ref: z.string().uuid().nullable().optional(),
 });
 
 async function resolveAtlas(
@@ -27,13 +28,20 @@ export async function GET(
 
   const { searchParams } = new URL(request.url);
   const limit = Math.min(200, Number(searchParams.get("limit") ?? 50));
+  const sourceRef = searchParams.get("source_ref");
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("journal_entries")
     .select("*")
     .eq("atlas_id", atlas.id)
     .order("created_at", { ascending: false })
     .limit(limit);
+
+  if (sourceRef) {
+    query = query.eq("source_ref", sourceRef);
+  }
+
+  const { data, error } = await query;
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ entries: data });
@@ -66,6 +74,7 @@ export async function POST(
       text: parsed.data.text.trim(),
       channel: "web",
       status: "raw",
+      source_ref: parsed.data.source_ref ?? null,
     })
     .select()
     .single();

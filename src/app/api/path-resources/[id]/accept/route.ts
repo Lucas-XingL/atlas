@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { detectSourceType } from "@/lib/fetch/web";
-import { processSourceById } from "@/lib/pipeline/process-source";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
 
 /**
  * POST /api/path-resources/[id]/accept
  *
- * Convert a suggested PathResource into an active Source:
- *  - consumable+url: insert source + run fetch+summarize synchronously (returns when ready/failed)
- *  - consumable w/o url, external, physical: insert placeholder source with fetch_status='pending'
- *    for users to later paste content via /api/sources/[id]/paste
+ * Convert a suggested PathResource into an active Source row.
  *
- * Also flips the resource user_status to 'reading' (or 'accepted' if no source yet) and
- * writes source_id back.
+ * New contract (iter 2):
+ *   - Always returns `source_id` fast. Never blocks on fetching/summarizing.
+ *   - The reader page is responsible for driving content ingestion:
+ *       consumable+url → calls /api/sources/:id/process
+ *       external/physical/no-url → shows "no raw content" reader mode
+ *         where user can add per-item journal entries without raw text.
+ *   - path_resources.user_status flips to 'accepted' (source created, no content yet).
+ *     Once content lands the downstream paste/process pipelines bump it to 'reading'.
  */
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   const supabase = createSupabaseServer();
@@ -31,19 +32,17 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     .maybeSingle();
   if (!resource) return NextResponse.json({ error: "resource not found" }, { status: 404 });
 
-  const atlasId = (resource.stage as any)?.path?.atlas_id;
+  const atlasId = (resource.stage as { path?: { atlas_id?: string } } | null)?.path?.atlas_id;
   if (!atlasId) return NextResponse.json({ error: "atlas lookup failed" }, { status: 500 });
 
-  // Already accepted?
+  // Already accepted? Return the existing source id.
   if (resource.source_id) {
     return NextResponse.json({ source_id: resource.source_id, already_accepted: true });
   }
 
   const hasUrl = typeof resource.url === "string" && resource.url.length > 0;
-  const isConsumable = resource.resource_type === "consumable";
   const isPhysical = resource.resource_type === "physical";
 
-  // Create the source row
   const { data: src, error: srcErr } = await supabase
     .from("sources")
     .insert({
@@ -67,27 +66,10 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: srcErr?.message ?? "insert source failed" }, { status: 500 });
   }
 
-  // Link back + update status
   await supabase
     .from("path_resources")
-    .update({
-      source_id: src.id,
-      user_status: isConsumable && hasUrl ? "reading" : "accepted",
-    })
+    .update({ source_id: src.id, user_status: "accepted" })
     .eq("id", resource.id);
 
-  // Synchronously fetch + summarize if we can
-  if (isConsumable && hasUrl) {
-    const result = await processSourceById(supabase, src.id, user.id);
-    if (!result.ok) {
-      // Source row still exists with fetch_status='failed'; UI can offer paste/retry
-      return NextResponse.json({
-        source_id: src.id,
-        fetch_ok: false,
-        error: result.error,
-      });
-    }
-  }
-
-  return NextResponse.json({ source_id: src.id, fetch_ok: isConsumable && hasUrl });
+  return NextResponse.json({ source_id: src.id });
 }
