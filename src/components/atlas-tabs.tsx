@@ -12,6 +12,7 @@ export function AtlasTabs({ slug }: { slug: string }) {
     { href: base, label: "概览" },
     { href: `${base}/recommendations`, label: "内容推荐" },
     { href: `${base}/reading`, label: "阅读清单" },
+    { href: `${base}/wiki`, label: "知识库" },
     { href: `${base}/journal`, label: "随记" },
     { href: `${base}/flashcards`, label: "卡片" },
   ];

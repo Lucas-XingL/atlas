@@ -61,6 +61,8 @@ export interface Source {
   ai_recommended: boolean;
   fetch_status: FetchStatus;
   fetch_error: string | null;
+  wiki_ingested_at: string | null;
+  wiki_page_id: string | null;
   ingested_at: string;
   updated_at: string;
 }
@@ -243,5 +245,49 @@ export interface ManualCandidate {
   text_snippet: string | null;
   title: string;
   note: string | null;
+  created_at: string;
+}
+
+// --- v4: knowledge wiki ---
+
+export type WikiPageKind = "source" | "concept" | "index" | "log" | "synthesis";
+
+export interface WikiPage {
+  id: string;
+  atlas_id: string;
+  user_id: string;
+  slug: string;
+  title: string;
+  kind: WikiPageKind;
+  body_md: string;
+  frontmatter: Record<string, unknown>;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WikiLink {
+  id: string;
+  atlas_id: string;
+  from_page: string;
+  to_slug: string;
+  to_page: string | null;
+  created_at: string;
+}
+
+export type WikiLogKind = "ingest" | "lint" | "manual";
+
+export interface WikiLogEntry {
+  id: string;
+  atlas_id: string;
+  user_id: string;
+  kind: WikiLogKind;
+  source_id: string | null;
+  summary: string;
+  pages_touched: Array<{
+    slug: string;
+    title: string;
+    action: "created" | "updated" | "unchanged";
+  }>;
   created_at: string;
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServer } from "@/lib/supabase/server";
+import { ingestSourceIntoWiki } from "@/lib/pipeline/ingest-wiki";
 
 export const runtime = "nodejs";
 
@@ -37,6 +38,18 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     update.reading_progress = 100;
   }
 
+  // Snapshot pre-update state so we can detect the unread/reading → read transition.
+  const { data: prev } = await supabase
+    .from("sources")
+    .select("status, wiki_ingested_at, raw_content, user_id")
+    .eq("id", params.id)
+    .maybeSingle<{
+      status: string;
+      wiki_ingested_at: string | null;
+      raw_content: string | null;
+      user_id: string;
+    }>();
+
   const { data, error } = await supabase
     .from("sources")
     .update(update)
@@ -61,6 +74,25 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         .update({ user_status: next })
         .eq("id", data.path_resource_id);
     }
+  }
+
+  // Auto-ingest into wiki on first transition to 'read' (only if there's content
+  // to ingest — PDFs without extracted text or pending-paste rows are skipped).
+  const justMarkedRead =
+    data.status === "read" &&
+    prev?.status !== "read" &&
+    !prev?.wiki_ingested_at &&
+    (data.raw_content?.length ?? 0) > 0;
+
+  if (justMarkedRead && prev?.user_id) {
+    // Fire-and-forget: don't block the PATCH response on LLM latency.
+    // Errors are recorded against the source row's fetch_error-free path; we
+    // log to console and the user can retry via the manual button.
+    void ingestSourceIntoWiki(supabase, data.id, prev.user_id)
+      .then((r) => {
+        if (!r.ok) console.error("[wiki-ingest] failed", { id: data.id, error: r.error });
+      })
+      .catch((err) => console.error("[wiki-ingest] threw", { id: data.id, err }));
   }
 
   return NextResponse.json({ source: data });

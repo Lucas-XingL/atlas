@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatRelative, cn } from "@/lib/utils";
-import { BookOpen, Radio, PenLine, Sparkles, ExternalLink } from "lucide-react";
+import { BookOpen, Radio, PenLine, Sparkles, ExternalLink, Network } from "lucide-react";
 import Link from "next/link";
 import type { Source, SourceOrigin } from "@/lib/types";
 
@@ -194,6 +194,7 @@ function SourceItem({
 }) {
   const [pasteText, setPasteText] = React.useState("");
   const [busy, setBusy] = React.useState(false);
+  const [ingesting, setIngesting] = React.useState(false);
 
   async function remove() {
     if (!confirm("从阅读清单删除这条？")) return;
@@ -224,6 +225,21 @@ function SourceItem({
       onChange();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function ingestWiki() {
+    setIngesting(true);
+    try {
+      const r = await fetch(`/api/sources/${source.id}/ingest-wiki`, { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) {
+        alert(`入库失败：${j.error ?? "unknown"}`);
+        return;
+      }
+      onChange();
+    } finally {
+      setIngesting(false);
     }
   }
 
@@ -284,6 +300,16 @@ function SourceItem({
                   {source.reading_progress}%
                 </span>
               </div>
+            ) : null}
+
+            {/* Wiki ingest status */}
+            {source.fetch_status === "ready" ? (
+              <WikiIngestBadge
+                source={source}
+                slug={slug}
+                onIngest={ingestWiki}
+                ingesting={ingesting}
+              />
             ) : null}
             {source.summary?.why_relevant ? (
               <div className="mt-2 rounded bg-primary/10 px-2 py-1 text-xs text-primary/90">
@@ -376,4 +402,61 @@ function pasteHint(type: Source["resource_type"]): string {
     return "🎧 需外部消化（视频 / 播客 / 付费文章）· 看完后把要点粘过来，AI 会帮你整理。";
   }
   return "📝 这条源没有可抓取的 URL · 粘贴原文或要点，AI 会自动生成摘要。";
+}
+
+function WikiIngestBadge({
+  source,
+  slug,
+  onIngest,
+  ingesting,
+}: {
+  source: Source;
+  slug: string;
+  onIngest: () => void;
+  ingesting: boolean;
+}) {
+  const isIngested = !!source.wiki_ingested_at;
+  const pageSlug = `source-${source.id.slice(0, 8)}`;
+
+  if (isIngested) {
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <Link
+          href={`/app/atlases/${slug}/wiki?page=${pageSlug}`}
+          className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-400 hover:bg-emerald-500/20"
+        >
+          <Network className="h-3 w-3" />
+          已入库 · 查看 wiki
+        </Link>
+        <button
+          onClick={onIngest}
+          disabled={ingesting}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          {ingesting ? "重新入库中..." : "重新入库"}
+        </button>
+      </div>
+    );
+  }
+
+  if (source.status === "read") {
+    // Marked read but auto-ingest may still be running, or failed silently.
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+        <span className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-primary">
+          <Network className="h-3 w-3" />
+          {ingesting ? "入库中..." : "等待入库"}
+        </span>
+        <button
+          onClick={onIngest}
+          disabled={ingesting}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          {ingesting ? "..." : "手动触发"}
+        </button>
+      </div>
+    );
+  }
+
+  return null;
 }
