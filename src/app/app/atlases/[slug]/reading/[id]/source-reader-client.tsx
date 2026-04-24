@@ -395,27 +395,35 @@ export function SourceReaderClient({
   }
 
   // ------------------------------------------------------------------
-  // Auto-hide top chrome on scroll-down, reveal near top. Shown again on
-  // mouse hovering over the top 40px.
+  // Auto-hide top chrome. A 'dead zone' at the top keeps the header pinned
+  // for the first 120px so users don't see it flicker while reading the
+  // meta card. Past that we hide on scroll-down, reveal on scroll-up with
+  // a wider ±12px delta threshold to avoid flapping near the boundary.
   // ------------------------------------------------------------------
   const [chromeVisible, setChromeVisible] = React.useState(true);
   const lastScrollRef = React.useRef(0);
   React.useEffect(() => {
+    const HIDE_DEADZONE = 120;
+    const DELTA = 12;
     function onScroll() {
       const y = window.scrollY;
       const delta = y - lastScrollRef.current;
-      if (y < 40) {
+      if (y < HIDE_DEADZONE) {
         setChromeVisible(true);
-      } else if (delta > 4) {
+      } else if (delta > DELTA) {
         setChromeVisible(false);
-      } else if (delta < -4) {
+        lastScrollRef.current = y;
+      } else if (delta < -DELTA) {
         setChromeVisible(true);
+        lastScrollRef.current = y;
       }
-      lastScrollRef.current = y;
+      // else: within deadband, don't update lastScrollRef so small jitters
+      // accumulate into a real gesture instead of bouncing the header.
     }
     function onMouseMove(e: MouseEvent) {
       if (e.clientY < 32) setChromeVisible(true);
     }
+    lastScrollRef.current = window.scrollY;
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("mousemove", onMouseMove);
     return () => {
@@ -433,10 +441,11 @@ export function SourceReaderClient({
       className="reader-surface min-h-screen"
       data-reader-theme={readerTheme === "dark" ? undefined : readerTheme}
     >
-      {/* Floating auto-hide header */}
+      {/* Floating auto-hide header. Fixed (not sticky) so showing/hiding
+          doesn't reflow the body and trigger scroll jitter. */}
       <header
         className={cn(
-          "sticky top-0 z-30 flex h-12 items-center justify-between gap-3 border-b border-[color-mix(in_srgb,var(--reader-fg)_12%,transparent)] px-5 backdrop-blur-sm transition-transform duration-200",
+          "fixed inset-x-0 top-0 z-30 flex h-12 items-center justify-between gap-3 border-b border-[color-mix(in_srgb,var(--reader-fg)_12%,transparent)] px-5 backdrop-blur-sm transition-transform duration-200 will-change-transform",
           chromeVisible ? "translate-y-0" : "-translate-y-full"
         )}
         style={{ background: "color-mix(in srgb, var(--reader-bg) 85%, transparent)" }}
@@ -477,8 +486,9 @@ export function SourceReaderClient({
         </div>
       </header>
 
-      {/* Body — pick mode */}
-      <div className="pb-24 pt-6 md:pt-10">
+      {/* Body — pick mode. pt offset accounts for the fixed h-12 header
+          plus some breathing room. */}
+      <div className="pb-24 pt-16 md:pt-20">
         {isTransient ? (
           <div className="mx-auto max-w-3xl px-6">
             <LoadingMode
