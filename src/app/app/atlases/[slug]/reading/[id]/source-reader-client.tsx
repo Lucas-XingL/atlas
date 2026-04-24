@@ -63,8 +63,12 @@ export function SourceReaderClient({
   // ------------------------------------------------------------------
   // 1. Auto-drive fetching for a pending consumable-with-url source.
   //    Fires once on mount; progress is observed via polling below.
+  //    If /process responds with an error, bubble it into local state so
+  //    the UI can break the user out of the 'pending' loading view.
   // ------------------------------------------------------------------
   const didKickProcess = React.useRef(false);
+  const [kickError, setKickError] = React.useState<string | null>(null);
+
   React.useEffect(() => {
     if (didKickProcess.current) return;
     if (
@@ -73,10 +77,35 @@ export function SourceReaderClient({
       source.resource_type === "consumable"
     ) {
       didKickProcess.current = true;
-      // Fire-and-forget; the poll below will pick up the status update.
-      fetch(`/api/sources/${source.id}/process`, { method: "POST" }).catch(() => {
-        /* swallow; failed status will surface via polling */
-      });
+      (async () => {
+        try {
+          const res = await fetch(`/api/sources/${source.id}/process`, { method: "POST" });
+          if (!res.ok) {
+            const j = await res.json().catch(() => ({}));
+            setKickError(j.error ?? `HTTP ${res.status}`);
+            // Reflect the failure locally so the user sees NoContentMode
+            // instead of a perpetual skeleton.
+            setSource((prev) => ({
+              ...prev,
+              fetch_status: "failed",
+              fetch_error: j.error ?? `process HTTP ${res.status}`,
+            }));
+            return;
+          }
+          const j = await res.json();
+          if (j.source) {
+            setSource((prev) => ({ ...prev, ...j.source }));
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "network error";
+          setKickError(msg);
+          setSource((prev) => ({
+            ...prev,
+            fetch_status: "failed",
+            fetch_error: `process request failed: ${msg}`,
+          }));
+        }
+      })();
     }
   }, [source.fetch_status, source.id, source.url, source.resource_type]);
 
@@ -88,8 +117,28 @@ export function SourceReaderClient({
     source.fetch_status === "fetching" ||
     source.fetch_status === "summarizing";
 
+  // Watchdog: if the source is still in a transient state after ~45s without
+  // changing, surface a "looks stuck" escape hatch so the user isn't stranded
+  // on the loading screen forever (serverless timeouts, LLM rate-limit, etc).
+  const transientStartedAt = React.useRef<number | null>(null);
+  const lastSeenStatus = React.useRef<string | null>(null);
+  const [stuck, setStuck] = React.useState(false);
+
   React.useEffect(() => {
-    if (!isTransient) return;
+    if (!isTransient) {
+      transientStartedAt.current = null;
+      lastSeenStatus.current = null;
+      setStuck(false);
+      return;
+    }
+    if (
+      transientStartedAt.current === null ||
+      lastSeenStatus.current !== source.fetch_status
+    ) {
+      transientStartedAt.current = Date.now();
+      lastSeenStatus.current = source.fetch_status;
+      setStuck(false);
+    }
     let cancelled = false;
     const tick = async () => {
       try {
@@ -102,13 +151,20 @@ export function SourceReaderClient({
       } catch {
         /* ignore */
       }
+      if (
+        !cancelled &&
+        transientStartedAt.current !== null &&
+        Date.now() - transientStartedAt.current > 45_000
+      ) {
+        setStuck(true);
+      }
     };
     const int = setInterval(tick, 2500);
     return () => {
       cancelled = true;
       clearInterval(int);
     };
-  }, [isTransient, source.id]);
+  }, [isTransient, source.fetch_status, source.id]);
 
   // ------------------------------------------------------------------
   // 3. Progress save (used only in markdown mode).
@@ -372,7 +428,22 @@ export function SourceReaderClient({
 
       {/* Body — pick mode */}
       {isTransient ? (
-        <LoadingMode source={source} />
+        <LoadingMode
+          source={source}
+          stuck={stuck}
+          kickError={kickError}
+          onRetry={retryFetch}
+          onForceJournal={() => {
+            // Let the user bail out of the loader without waiting — flip the
+            // local view to NoContentMode by marking the source failed
+            // locally. The server row still reflects reality.
+            setSource((prev) => ({
+              ...prev,
+              fetch_status: "failed",
+              fetch_error: prev.fetch_error ?? "用户放弃等待",
+            }));
+          }}
+        />
       ) : hasContent && view === "iframe" && source.url ? (
         <IframeMode
           slug={slug}
@@ -449,7 +520,19 @@ export function SourceReaderClient({
 // Sub-views
 // ----------------------------------------------------------------------
 
-function LoadingMode({ source }: { source: Source }) {
+function LoadingMode({
+  source,
+  stuck,
+  kickError,
+  onRetry,
+  onForceJournal,
+}: {
+  source: Source;
+  stuck: boolean;
+  kickError: string | null;
+  onRetry: () => void;
+  onForceJournal: () => void;
+}) {
   const label: Record<Source["fetch_status"], string> = {
     pending: "排队中…",
     fetching: "抓取正文中…",
@@ -469,9 +552,50 @@ function LoadingMode({ source }: { source: Source }) {
         <div className="h-3 w-11/12 animate-pulse rounded bg-muted/60" />
         <div className="h-3 w-2/3 animate-pulse rounded bg-muted/60" />
       </div>
-      <p className="mt-6 text-xs text-muted-foreground">
-        需要 10-30 秒 · 完成后页面会自动刷新
-      </p>
+
+      {stuck ? (
+        <div className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/5 p-4 text-xs">
+          <div className="font-medium text-amber-300">看起来卡住了</div>
+          <p className="mt-1 text-muted-foreground">
+            抓取或 AI 摘要超过 45 秒还没有进展。可能是网站拒绝爬虫、LLM
+            限流、或网络波动。
+            {kickError ? (
+              <>
+                {" "}
+                后端报错：<code className="rounded bg-muted px-1">{kickError}</code>
+              </>
+            ) : null}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={onRetry}
+              className="rounded border border-border bg-background px-2 py-1 hover:border-foreground/40"
+            >
+              重试抓取
+            </button>
+            <button
+              onClick={onForceJournal}
+              className="rounded border border-border bg-background px-2 py-1 hover:border-foreground/40"
+            >
+              跳过抓取 · 直接记随记
+            </button>
+            {source.url ? (
+              <a
+                href={source.url}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded border border-border bg-background px-2 py-1 hover:border-foreground/40"
+              >
+                在新标签打开原文
+              </a>
+            ) : null}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-6 text-xs text-muted-foreground">
+          需要 10-30 秒 · 完成后页面会自动刷新
+        </p>
+      )}
     </div>
   );
 }

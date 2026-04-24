@@ -276,6 +276,13 @@ function ResourceRow({
   const [pdfOpen, setPdfOpen] = React.useState(false);
   const typeMeta = TYPE_META[r.resource_type];
   const statusMeta = STATUS_META[r.user_status];
+  // If user_status says reading/accepted but we have no source_id, the source
+  // was deleted from the reading list; call that out so the label doesn't lie.
+  const isOrphan =
+    (r.user_status === "reading" || r.user_status === "accepted") && !r.source_id;
+  const displayStatus = isOrphan
+    ? { label: "source 已删", tone: "text-amber-400" }
+    : statusMeta;
 
   async function acceptAndReturnSourceId(): Promise<string> {
     const res = await fetch(`/api/path-resources/${r.id}/accept`, { method: "POST" });
@@ -380,7 +387,7 @@ function ResourceRow({
             {typeMeta.icon}
             {typeMeta.label}
           </span>
-          <span className={cn("text-[11px]", statusMeta.tone)}>· {statusMeta.label}</span>
+          <span className={cn("text-[11px]", displayStatus.tone)}>· {displayStatus.label}</span>
         </div>
         {r.author ? (
           <div className="mt-0.5 text-[11px] text-muted-foreground">{r.author}</div>
@@ -517,6 +524,25 @@ function StatusActions({
   }
 
   if (status === "reading" || (status === "accepted" && hasSource)) {
+    // Orphan guard: reading without a source_id means the user deleted the
+    // source from the reading list before we had the DELETE→suggested sync.
+    // Show a restart affordance instead of 继续阅读 that leads nowhere.
+    if (status === "reading" && !hasSource) {
+      return (
+        <>
+          <Button size="sm" onClick={onStart} disabled={busy}>
+            {busy ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <>
+                <RotateCcw className="h-3 w-3" /> 重新开始
+              </>
+            )}
+          </Button>
+          {kebab}
+        </>
+      );
+    }
     return (
       <>
         <Button size="sm" onClick={onView} disabled={busy}>

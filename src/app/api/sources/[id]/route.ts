@@ -100,6 +100,24 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
 export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   const supabase = createSupabaseServer();
+
+  // If the source is linked to a path_resource, the user deleting it is
+  // effectively saying "I didn't actually start reading this" — reset that
+  // path_resource back to 'suggested' so the recommendations view stays in
+  // sync instead of showing a permanent '读中' for an orphan row.
+  const { data: src } = await supabase
+    .from("sources")
+    .select("path_resource_id")
+    .eq("id", params.id)
+    .maybeSingle<{ path_resource_id: string | null }>();
+
+  if (src?.path_resource_id) {
+    await supabase
+      .from("path_resources")
+      .update({ source_id: null, user_status: "suggested" })
+      .eq("id", src.path_resource_id);
+  }
+
   const { error } = await supabase.from("sources").delete().eq("id", params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true });

@@ -19,10 +19,24 @@ export async function processSourceById(
     .maybeSingle();
 
   if (fetchErr || !src) {
-    return { ok: false, error: fetchErr?.message ?? "source not found" };
+    const msg = fetchErr?.message ?? "source not found";
+    console.error("[processSourceById] pre-try failed", { sourceId, msg });
+    // Still attempt to write the failure to the row so the client's poll can
+    // observe it instead of waiting forever. Guarded by the row actually
+    // existing — if not, nothing to do.
+    await supabase
+      .from("sources")
+      .update({ fetch_status: "failed", fetch_error: msg.slice(0, 500) })
+      .eq("id", sourceId);
+    return { ok: false, error: msg };
   }
   if (!src.url) {
-    return { ok: false, error: "source has no URL; use paste flow" };
+    const msg = "source has no URL; use paste flow";
+    await supabase
+      .from("sources")
+      .update({ fetch_status: "failed", fetch_error: msg })
+      .eq("id", sourceId);
+    return { ok: false, error: msg };
   }
 
   try {
