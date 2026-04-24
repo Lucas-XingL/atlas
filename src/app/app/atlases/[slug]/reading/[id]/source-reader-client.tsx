@@ -764,7 +764,9 @@ function MarkdownMode({
       if (e.key === "ArrowLeft" || e.key === "PageUp") {
         e.preventDefault();
         goPrev();
-      } else if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+      } else if (e.key === "ArrowRight" || e.key === "PageDown") {
+        // Intentionally skip Space — many users rely on it to scroll the
+        // page, hijacking it felt like 'scroll is broken'.
         e.preventDefault();
         goNext();
       }
@@ -810,25 +812,32 @@ function MarkdownMode({
 
   return (
     <>
-      {/* Reader column — centered, tap-to-turn hotspots on outer edges. */}
-      <div className="relative mx-auto w-full max-w-3xl px-4 md:px-12">
-        {/* Invisible left/right tap zones (only in the outer padding). Don't
-            cover the prose column so text selection still works inside. */}
-        <button
-          type="button"
-          aria-label="上一页"
-          className="reader-tap-zone left"
-          onClick={onLeftZoneClick}
-          disabled={currentPage === 0}
-        />
-        <button
-          type="button"
-          aria-label="下一页"
-          className="reader-tap-zone right"
-          onClick={onRightZoneClick}
-          disabled={currentPage >= pageCount - 1}
-        />
+      {/* Tap-to-turn hotspots. Fixed to the viewport's outer gutters so they
+          don't sit on top of prose. A plain div (role=button) is used
+          instead of <button> so browsers never apply button-specific
+          interaction quirks that could eat wheel / touch events. */}
+      <div
+        role="button"
+        aria-label="上一页"
+        tabIndex={-1}
+        aria-disabled={currentPage === 0}
+        className="reader-tap-zone left"
+        onClick={onLeftZoneClick}
+        data-disabled={currentPage === 0 ? "true" : undefined}
+      />
+      <div
+        role="button"
+        aria-label="下一页"
+        tabIndex={-1}
+        aria-disabled={currentPage >= pageCount - 1}
+        className="reader-tap-zone right"
+        onClick={onRightZoneClick}
+        data-disabled={currentPage >= pageCount - 1 ? "true" : undefined}
+      />
 
+      {/* Reader column — centered, padded. No tap zones here anymore;
+          the fixed viewport hotspots above handle page turns. */}
+      <div className="mx-auto w-full max-w-3xl px-4 md:px-12">
         {isFirstPage ? <ReaderMetaCard source={source} /> : null}
 
         <div

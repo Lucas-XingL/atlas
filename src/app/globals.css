@@ -214,20 +214,28 @@
 .reader-page-enter-forward { animation: reader-page-in-forward 220ms ease-out; }
 .reader-page-enter-backward { animation: reader-page-in-backward 220ms ease-out; }
 
-/* Click-to-turn invisible hotspots */
+/* Click-to-turn hotspots sit *outside* the reading column, covering the
+ * background padding only. They use fixed positioning so they stay pinned
+ * to the viewport edges (the viewport itself still scrolls normally, since
+ * the hotspot doesn't capture the wheel event unless the cursor is actually
+ * over it). We intentionally leave a large vertical gap at top/bottom so
+ * the header and bottom bar remain interactive. */
 .reader-tap-zone {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 10%;
+  position: fixed;
+  top: 56px;    /* below the 48px header + 8px breathing room */
+  bottom: 72px; /* above the bottom control pill */
+  width: 64px;
   z-index: 5;
   cursor: pointer;
   background: transparent;
   border: 0;
+  padding: 0;
+  /* Allow wheel scroll to pass through if we don't get a click ourselves. */
+  touch-action: pan-y;
 }
-@media (min-width: 768px) {
-  .reader-tap-zone { width: 18%; }
+@media (min-width: 1024px) {
+  .reader-tap-zone { width: clamp(64px, 12vw, 140px); }
 }
 .reader-tap-zone.left { left: 0; }
 .reader-tap-zone.right { right: 0; }
-.reader-tap-zone:disabled { cursor: default; }
+.reader-tap-zone[data-disabled="true"] { cursor: default; pointer-events: none; }
