@@ -23,7 +23,16 @@ import { cn } from "@/lib/utils";
 
 type Mode = "url" | "pdf" | "text";
 
-const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024;
+
+type DocKind = "pdf" | "epub";
+
+function classifyFile(f: File): DocKind | null {
+  const name = f.name.toLowerCase();
+  if (f.type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (f.type === "application/epub+zip" || name.endsWith(".epub")) return "epub";
+  return null;
+}
 
 export interface StartReadingDialogProps {
   open: boolean;
@@ -64,6 +73,7 @@ export function StartReadingDialog({
   const [url, setUrl] = React.useState("");
   const [text, setText] = React.useState("");
   const [file, setFile] = React.useState<File | null>(null);
+  const [fileKind, setFileKind] = React.useState<DocKind | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [stage, setStage] = React.useState<"idle" | "uploading" | "submitting" | "ingesting">(
     "idle"
@@ -76,6 +86,7 @@ export function StartReadingDialog({
       setUrl("");
       setText("");
       setFile(null);
+      setFileKind(null);
       setError(null);
       setStage("idle");
     }
@@ -85,18 +96,20 @@ export function StartReadingDialog({
     setError(null);
     if (!f) {
       setFile(null);
+      setFileKind(null);
       return;
     }
-    const ok = f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf");
-    if (!ok) {
-      setError("目前只支持 PDF（EPUB 规划中）");
+    const kind = classifyFile(f);
+    if (!kind) {
+      setError("请选择 PDF 或 EPUB 文件");
       return;
     }
     if (f.size > MAX_BYTES) {
-      setError(`文件过大：${(f.size / 1024 / 1024).toFixed(1)}MB，上限 20MB`);
+      setError(`文件过大：${(f.size / 1024 / 1024).toFixed(1)}MB，上限 200MB`);
       return;
     }
     setFile(f);
+    setFileKind(kind);
   }
 
   async function submit() {
@@ -125,9 +138,9 @@ export function StartReadingDialog({
         return;
       }
 
-      // PDF: upload to storage first, then accept with the path.
-      if (!file) {
-        setError("请选择一个 PDF 文件");
+      // PDF / EPUB: upload to storage first, then accept with the path.
+      if (!file || !fileKind) {
+        setError("请选择一个 PDF 或 EPUB 文件");
         return;
       }
       setStage("uploading");
@@ -137,10 +150,12 @@ export function StartReadingDialog({
       if (!userId) throw new Error("未登录");
       // Storage path must start with <user_id>/. Use a random key so repeated
       // uploads for the same resource don't collide.
-      const key = `${userId}/${crypto.randomUUID()}.pdf`;
+      const ext = fileKind === "epub" ? "epub" : "pdf";
+      const mime = fileKind === "epub" ? "application/epub+zip" : "application/pdf";
+      const key = `${userId}/${crypto.randomUUID()}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("pdfs")
-        .upload(key, file, { contentType: "application/pdf", upsert: false });
+        .upload(key, file, { contentType: mime, upsert: false });
       if (upErr) throw new Error(`上传失败: ${upErr.message}`);
 
       setStage("submitting");
@@ -201,7 +216,7 @@ export function StartReadingDialog({
           {(
             [
               { v: "url", label: "URL", icon: <LinkIcon className="h-3 w-3" /> },
-              { v: "pdf", label: "上传 PDF", icon: <Upload className="h-3 w-3" /> },
+              { v: "pdf", label: "上传 PDF / EPUB", icon: <Upload className="h-3 w-3" /> },
               { v: "text", label: "粘贴正文", icon: <FileText className="h-3 w-3" /> },
             ] as const
           ).map((t) => (
@@ -250,22 +265,29 @@ export function StartReadingDialog({
                 <Upload className="h-6 w-6" />
                 {file ? (
                   <>
-                    <span className="font-medium text-foreground">{file.name}</span>
+                    <span className="font-medium text-foreground">
+                      {file.name}
+                      <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                        {fileKind}
+                      </span>
+                    </span>
                     <span className="text-xs">
                       {(file.size / 1024 / 1024).toFixed(1)}MB · 点击更换
                     </span>
                   </>
                 ) : (
                   <>
-                    <span>点击选择 PDF 文件</span>
-                    <span className="text-xs">最大 20MB · 仅支持含文字层的 PDF</span>
+                    <span>点击选择 PDF 或 EPUB 文件</span>
+                    <span className="text-xs">
+                      最大 200MB · 含文字层的 PDF / 非 DRM 的 EPUB
+                    </span>
                   </>
                 )}
               </button>
               <input
                 ref={inputRef}
                 type="file"
-                accept="application/pdf"
+                accept="application/pdf,application/epub+zip,.pdf,.epub"
                 className="hidden"
                 onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
               />
@@ -294,9 +316,11 @@ export function StartReadingDialog({
           </div>
         ) : null}
 
-        {stage === "uploading" ? <Status label="上传 PDF 中…" /> : null}
+        {stage === "uploading" ? <Status label="上传中…" /> : null}
         {stage === "submitting" ? <Status label="创建资源中…" /> : null}
-        {stage === "ingesting" ? <Status label="解析 PDF 并生成摘要…" /> : null}
+        {stage === "ingesting" ? (
+          <Status label={fileKind === "epub" ? "解析 EPUB 并生成摘要…" : "解析 PDF 并生成摘要…"} />
+        ) : null}
 
         <div className="mt-5 flex items-center justify-end gap-2">
           <Button variant="outline" size="sm" onClick={onClose} disabled={busy}>

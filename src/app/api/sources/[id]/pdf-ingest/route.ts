@@ -2,27 +2,29 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServer, createSupabaseServiceRole } from "@/lib/supabase/server";
 import { extractPdfText } from "@/lib/fetch/pdf";
+import { extractEpubText } from "@/lib/fetch/epub";
 import { summarizePastedText } from "@/lib/pipeline/process-source";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 const schema = z.object({
+  // Legacy name; still accepted. Either PDF or EPUB storage path is fine.
   pdf_storage_path: z.string().min(1),
 });
 
-const MAX_TEXT_CHARS = 200_000;
+const MAX_TEXT_CHARS = 400_000;
 
 /**
- * Ingest an already-uploaded PDF:
- *   1. Verify the source belongs to the current user
- *   2. Download the PDF blob from Supabase Storage (service-role bypasses RLS)
- *   3. Extract text via pdf-parse
- *   4. Store storage path + run the standard summarize pipeline
+ * Ingest an already-uploaded document (PDF or EPUB):
+ *   1. Verify ownership of the source and the storage path
+ *   2. Download the blob via service-role
+ *   3. Dispatch to PDF or EPUB extractor based on extension
+ *   4. Summarize + persist raw_content via the standard pipeline
  *
- * The PDF itself is uploaded client-side direct to Storage (so we don't hit
- * Next.js's ~4.5 MB request-body limit on Vercel). We only receive the
- * `pdf_storage_path` here.
+ * The bucket is still called `pdfs` for historical reasons — after 009 it
+ * accepts EPUBs too. The endpoint URL stays /pdf-ingest to avoid breaking
+ * older clients; `pdf_storage_path` is now a generic doc path.
  */
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const supabase = createSupabaseServer();
@@ -36,14 +38,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
-  const { pdf_storage_path } = parsed.data;
+  const storagePath = parsed.data.pdf_storage_path;
 
-  // Storage path must be scoped to this user: `<user_id>/...`
-  if (!pdf_storage_path.startsWith(`${user.id}/`)) {
+  if (!storagePath.startsWith(`${user.id}/`)) {
     return NextResponse.json({ error: "storage path not owned by user" }, { status: 403 });
   }
 
-  // Verify source ownership
   const { data: src } = await supabase
     .from("sources")
     .select("id, user_id")
@@ -53,36 +53,74 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "source not found" }, { status: 404 });
   }
 
-  // Mark fetching + save storage path so a later retry can reuse the upload
+  const isEpub = storagePath.toLowerCase().endsWith(".epub");
+
   await supabase
     .from("sources")
-    .update({ fetch_status: "fetching", pdf_storage_path })
+    .update({ fetch_status: "fetching", pdf_storage_path: storagePath })
     .eq("id", params.id);
 
   try {
-    // Download via service-role (RLS-bypassing) — the user already passed auth
     const service = createSupabaseServiceRole();
     const { data: blob, error: dlErr } = await service.storage
       .from("pdfs")
-      .download(pdf_storage_path);
+      .download(storagePath);
     if (dlErr || !blob) {
       throw new Error(`storage download failed: ${dlErr?.message ?? "unknown"}`);
     }
-
     const buffer = Buffer.from(await blob.arrayBuffer());
-    const { text, page_count } = await extractPdfText(buffer);
+
+    let text: string;
+    let meta: { title?: string | null; author?: string | null } = {};
+    let unit_count = 0;
+
+    if (isEpub) {
+      const res = await extractEpubText(buffer);
+      text = res.text;
+      unit_count = res.chapter_count;
+      meta = { title: res.title, author: res.author };
+    } else {
+      const res = await extractPdfText(buffer);
+      text = res.text;
+      unit_count = res.page_count;
+    }
+
     const trimmed = text.slice(0, MAX_TEXT_CHARS).trim();
 
     if (!trimmed || trimmed.length < 50) {
-      throw new Error(
-        page_count === 0
+      const detail = isEpub
+        ? unit_count === 0
+          ? "EPUB 里没有读到章节内容（文件可能是空的或损坏）"
+          : "未能从 EPUB 提取到文字 — 可能全是图片或 DRM 加密"
+        : unit_count === 0
           ? "无法解析 PDF（文件可能损坏）"
-          : "未能从 PDF 提取到文字 — 可能是扫描件，请手动粘贴文本"
-      );
+          : "未能从 PDF 提取到文字 — 可能是扫描件，请手动粘贴文本";
+      throw new Error(detail);
+    }
+
+    // For EPUBs, prefer the parsed title/author if the source row didn't have
+    // them. Don't overwrite a user-provided title.
+    const titleUpdate: Record<string, unknown> = {};
+    if (isEpub) {
+      const { data: current } = await supabase
+        .from("sources")
+        .select("title, author")
+        .eq("id", params.id)
+        .maybeSingle<{ title: string; author: string | null }>();
+      if (current) {
+        if (meta.title && (!current.title || current.title === "Untitled")) {
+          titleUpdate.title = meta.title;
+        }
+        if (meta.author && !current.author) titleUpdate.author = meta.author;
+      }
+      if (Object.keys(titleUpdate).length > 0) {
+        await supabase.from("sources").update(titleUpdate).eq("id", params.id);
+      }
     }
 
     const result = await summarizePastedText(supabase, params.id, user.id, {
       text: trimmed,
+      title: isEpub ? (meta.title ?? undefined) : undefined,
     });
     if (!result.ok) throw new Error(result.error);
 
@@ -92,7 +130,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
       .eq("id", params.id)
       .maybeSingle();
 
-    return NextResponse.json({ source: data, page_count });
+    return NextResponse.json({
+      source: data,
+      format: isEpub ? "epub" : "pdf",
+      [isEpub ? "chapter_count" : "page_count"]: unit_count,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown";
     await supabase

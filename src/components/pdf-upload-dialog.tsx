@@ -5,20 +5,30 @@ import { Upload, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
 
-const MAX_BYTES = 20 * 1024 * 1024;
+const MAX_BYTES = 200 * 1024 * 1024;
+
+type DocKind = "pdf" | "epub";
+
+function classifyFile(f: File): DocKind | null {
+  const name = f.name.toLowerCase();
+  if (f.type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (f.type === "application/epub+zip" || name.endsWith(".epub")) return "epub";
+  return null;
+}
 
 export interface PdfUploadDialogProps {
   open: boolean;
   resourceTitle: string;
   onClose: () => void;
   /**
-   * Called after the PDF has been fully ingested (text extracted + summarized).
-   * Receives the source id so the caller can navigate to /reading/[id].
+   * Called after the document has been fully ingested (text extracted +
+   * summarized). Receives the source id so the caller can navigate to
+   * /reading/[id].
    */
   onIngested: (sourceId: string) => void;
   /**
    * Called to turn the path resource into a source row (placeholder).
-   * Must return a source_id that we can attach the PDF to.
+   * Must return a source_id that we can attach the upload to.
    *
    * Kept as a prop so the dialog is reusable outside of path resources.
    */
@@ -33,6 +43,7 @@ export function PdfUploadDialog({
   createSource,
 }: PdfUploadDialogProps) {
   const [file, setFile] = React.useState<File | null>(null);
+  const [kind, setKind] = React.useState<DocKind | null>(null);
   const [stage, setStage] = React.useState<"pick" | "uploading" | "ingesting" | "done">("pick");
   const [error, setError] = React.useState<string | null>(null);
   const [progress, setProgress] = React.useState(0);
@@ -41,6 +52,7 @@ export function PdfUploadDialog({
   React.useEffect(() => {
     if (!open) {
       setFile(null);
+      setKind(null);
       setStage("pick");
       setError(null);
       setProgress(0);
@@ -51,40 +63,42 @@ export function PdfUploadDialog({
     setError(null);
     if (!f) {
       setFile(null);
+      setKind(null);
       return;
     }
-    if (f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) {
-      setError("请选择 PDF 文件");
+    const k = classifyFile(f);
+    if (!k) {
+      setError("请选择 PDF 或 EPUB 文件");
       return;
     }
     if (f.size > MAX_BYTES) {
-      setError(`文件过大：${(f.size / 1024 / 1024).toFixed(1)}MB，上限 20MB`);
+      setError(`文件过大：${(f.size / 1024 / 1024).toFixed(1)}MB，上限 200MB`);
       return;
     }
     setFile(f);
+    setKind(k);
   }
 
   async function start() {
-    if (!file) return;
+    if (!file || !kind) return;
     setError(null);
     try {
-      // 1. Create the source row
       const sourceId = await createSource();
 
-      // 2. Upload PDF direct to Supabase Storage
       setStage("uploading");
       const supabase = createSupabaseBrowser();
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
       if (!userId) throw new Error("未登录");
-      const path = `${userId}/${sourceId}.pdf`;
+      const ext = kind === "epub" ? "epub" : "pdf";
+      const path = `${userId}/${sourceId}.${ext}`;
+      const mime = kind === "epub" ? "application/epub+zip" : "application/pdf";
       const { error: upErr } = await supabase.storage
         .from("pdfs")
-        .upload(path, file, { contentType: "application/pdf", upsert: true });
+        .upload(path, file, { contentType: mime, upsert: true });
       if (upErr) throw new Error(`上传失败: ${upErr.message}`);
       setProgress(100);
 
-      // 3. Trigger server-side text extraction + summarize
       setStage("ingesting");
       const res = await fetch(`/api/sources/${sourceId}/pdf-ingest`, {
         method: "POST",
@@ -105,13 +119,14 @@ export function PdfUploadDialog({
   if (!open) return null;
 
   const busy = stage === "uploading" || stage === "ingesting";
+  const ingestLabel = kind === "epub" ? "解析 EPUB 并生成摘要…" : "解析 PDF 并生成摘要…";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div className="w-full max-w-md rounded-lg border border-border bg-background p-6 shadow-xl">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <h3 className="text-base font-semibold">上传 PDF</h3>
+            <h3 className="text-base font-semibold">上传 PDF / EPUB</h3>
             <p className="mt-1 truncate text-xs text-muted-foreground">{resourceTitle}</p>
           </div>
           <button
@@ -134,22 +149,29 @@ export function PdfUploadDialog({
             <Upload className="h-6 w-6" />
             {file ? (
               <>
-                <span className="font-medium text-foreground">{file.name}</span>
+                <span className="font-medium text-foreground">
+                  {file.name}
+                  <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                    {kind}
+                  </span>
+                </span>
                 <span className="text-xs">
                   {(file.size / 1024 / 1024).toFixed(1)}MB · 点击更换
                 </span>
               </>
             ) : (
               <>
-                <span>点击选择 PDF 文件</span>
-                <span className="text-xs">最大 20MB · 仅支持含文字层的 PDF</span>
+                <span>点击选择 PDF 或 EPUB 文件</span>
+                <span className="text-xs">
+                  最大 200MB · 含文字层的 PDF / 非 DRM 的 EPUB
+                </span>
               </>
             )}
           </button>
           <input
             ref={inputRef}
             type="file"
-            accept="application/pdf"
+            accept="application/pdf,application/epub+zip,.pdf,.epub"
             className="hidden"
             onChange={(e) => pick(e.target.files?.[0] ?? null)}
           />
@@ -177,7 +199,7 @@ export function PdfUploadDialog({
 
         {stage === "ingesting" ? (
           <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" /> 解析 PDF 并生成摘要…
+            <Loader2 className="h-3 w-3 animate-spin" /> {ingestLabel}
           </div>
         ) : null}
 
