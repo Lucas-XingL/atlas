@@ -112,10 +112,22 @@ export function SourceReaderClient({
   // ------------------------------------------------------------------
   // 2. Poll for status transitions while the source is not final.
   // ------------------------------------------------------------------
-  const isTransient =
-    source.fetch_status === "pending" ||
-    source.fetch_status === "fetching" ||
-    source.fetch_status === "summarizing";
+  // 2. Poll for status transitions while the source is not final.
+  //
+  // A source in `pending` is only *transient* if the auto-kick path can
+  // actually drive it forward — i.e. consumable + URL. Anything else
+  // (external / physical / missing URL) is waiting on a user decision and
+  // should render NoContentMode immediately instead of a perpetual spinner.
+  // ------------------------------------------------------------------
+  const willBeProcessed =
+    source.fetch_status === "pending" &&
+    !!source.url &&
+    source.resource_type === "consumable";
+
+  const isActivelyProcessing =
+    source.fetch_status === "fetching" || source.fetch_status === "summarizing";
+
+  const isTransient = willBeProcessed || isActivelyProcessing;
 
   // Watchdog: if the source is still in a transient state after ~45s without
   // changing, surface a "looks stuck" escape hatch so the user isn't stranded
