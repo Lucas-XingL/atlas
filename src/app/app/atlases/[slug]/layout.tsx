@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
-import { AtlasHeader } from "@/components/atlas-header";
-import { AtlasTabs } from "@/components/atlas-tabs";
 import { getAtlasBySlug } from "@/lib/atlas-data";
+import { AtlasShell } from "@/components/atlas-shell";
 
 export default async function AtlasLayout({
   children,
@@ -13,11 +12,5 @@ export default async function AtlasLayout({
   const atlas = await getAtlasBySlug(params.slug);
   if (!atlas) notFound();
 
-  return (
-    <div className="flex min-h-screen flex-col">
-      <AtlasHeader atlas={atlas} />
-      <AtlasTabs slug={atlas.slug} />
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
-  );
+  return <AtlasShell atlas={atlas}>{children}</AtlasShell>;
 }

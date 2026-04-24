@@ -109,7 +109,7 @@ export function MarkdownReader({
   }, [highlights, activeHighlightId, markdown, pageStart, pageEnd, onHighlightClick]);
 
   return (
-    <div ref={containerRef} className="prose-atlas select-text">
+    <div ref={containerRef} className="reader-prose select-text">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{markdown}</ReactMarkdown>
     </div>
   );
@@ -209,12 +209,8 @@ function wrapNodeSlice(
   const parent = textNode.parentNode;
   const mark = document.createElement("mark");
   mark.setAttribute("data-hl-id", hlId);
+  if (isActive) mark.setAttribute("data-hl-active", "true");
   mark.textContent = slice;
-  mark.style.cursor = "pointer";
-  mark.style.background = isActive ? "rgba(139, 92, 246, 0.35)" : "rgba(139, 92, 246, 0.18)";
-  mark.style.borderRadius = "2px";
-  mark.style.padding = "0 1px";
-  mark.style.color = "inherit";
   mark.onclick = (e) => {
     e.stopPropagation();
     onClick(hlId);

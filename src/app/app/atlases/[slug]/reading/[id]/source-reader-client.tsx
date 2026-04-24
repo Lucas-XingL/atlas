@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Check,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   FileText,
   Globe,
@@ -31,6 +33,7 @@ import { MarkdownReader, type HighlightRange } from "./markdown-reader";
 import { paginateMarkdown, pageOfOffset } from "./paginate";
 
 type ReaderView = "markdown" | "iframe";
+type ReaderTheme = "dark" | "light" | "sepia" | "midnight";
 
 export function SourceReaderClient({
   slug,
@@ -368,128 +371,168 @@ export function SourceReaderClient({
   const hasContent = !!source.raw_content && source.raw_content.length > 0;
 
   // ------------------------------------------------------------------
+  // Reader theme (persisted). Applied to the whole reader-surface so the
+  // non-markdown chrome (header, controls) matches the book page.
+  // ------------------------------------------------------------------
+  const [readerTheme, setReaderTheme] = React.useState<ReaderTheme>("dark");
+  React.useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("atlas:reader-theme") as ReaderTheme | null;
+      if (raw && ["dark", "light", "sepia", "midnight"].includes(raw)) {
+        setReaderTheme(raw);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  function changeTheme(next: ReaderTheme) {
+    setReaderTheme(next);
+    try {
+      window.localStorage.setItem("atlas:reader-theme", next);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Auto-hide top chrome on scroll-down, reveal near top. Shown again on
+  // mouse hovering over the top 40px.
+  // ------------------------------------------------------------------
+  const [chromeVisible, setChromeVisible] = React.useState(true);
+  const lastScrollRef = React.useRef(0);
+  React.useEffect(() => {
+    function onScroll() {
+      const y = window.scrollY;
+      const delta = y - lastScrollRef.current;
+      if (y < 40) {
+        setChromeVisible(true);
+      } else if (delta > 4) {
+        setChromeVisible(false);
+      } else if (delta < -4) {
+        setChromeVisible(true);
+      }
+      lastScrollRef.current = y;
+    }
+    function onMouseMove(e: MouseEvent) {
+      if (e.clientY < 32) setChromeVisible(true);
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("mousemove", onMouseMove);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("mousemove", onMouseMove);
+    };
+  }, []);
+
+  // ------------------------------------------------------------------
   // Render
   // ------------------------------------------------------------------
 
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-8 lg:py-8">
-      <header className="mb-6 flex items-center justify-between gap-4">
+    <div
+      className="reader-surface min-h-screen"
+      data-reader-theme={readerTheme === "dark" ? undefined : readerTheme}
+    >
+      {/* Floating auto-hide header */}
+      <header
+        className={cn(
+          "sticky top-0 z-30 flex h-12 items-center justify-between gap-3 border-b border-[color-mix(in_srgb,var(--reader-fg)_12%,transparent)] px-5 backdrop-blur-sm transition-transform duration-200",
+          chromeVisible ? "translate-y-0" : "-translate-y-full"
+        )}
+        style={{ background: "color-mix(in srgb, var(--reader-bg) 85%, transparent)" }}
+      >
         <Link
           href={`/app/atlases/${slug}/reading`}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+          className="inline-flex items-center gap-1.5 text-sm opacity-70 hover:opacity-100"
+          style={{ color: "var(--reader-fg)" }}
         >
-          <ArrowLeft className="h-4 w-4" /> 返回阅读清单
+          <ArrowLeft className="h-4 w-4" /> 返回
         </Link>
+        <div className="flex min-w-0 flex-1 justify-center px-4">
+          <h1 className="truncate text-sm font-medium opacity-80">{source.title}</h1>
+        </div>
         <div className="flex items-center gap-2">
           {hasContent && source.url && source.resource_type === "consumable" ? (
             <ReaderViewToggle view={view} onChange={setView} />
           ) : null}
+          <ThemePicker value={readerTheme} onChange={changeTheme} />
           {hasContent || sourceJournals.length > 0 ? (
-            <div className="flex items-center gap-2">
-              <div className="text-xs tabular-nums text-muted-foreground">
-                已读 {progress}%
-              </div>
-              {progress < 100 ? (
-                <Button size="sm" variant="outline" onClick={markRead} disabled={busy}>
-                  <Check className="h-3.5 w-3.5" />
-                  标记已读
-                </Button>
-              ) : (
-                <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
-                  <Check className="h-3 w-3" /> 已读完
-                </span>
-              )}
-            </div>
+            progress < 100 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={markRead}
+                disabled={busy}
+                className="h-7"
+              >
+                <Check className="h-3.5 w-3.5" />
+                标记已读
+              </Button>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+                <Check className="h-3 w-3" /> 已读完
+              </span>
+            )
           ) : null}
         </div>
       </header>
 
-      {/* Top card */}
-      <div className="mb-6 rounded-lg border border-border/60 bg-card/40 p-5">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded bg-muted px-1.5 py-0.5">
-            {source.resource_type === "consumable"
-              ? "可在线读"
-              : source.resource_type === "external"
-                ? "需外部看"
-                : "实体书"}
-          </span>
-          {source.author ? <span>{source.author}</span> : null}
-          {source.pub_date ? <span>· {source.pub_date}</span> : null}
-        </div>
-        <h1 className="mt-2 text-xl font-semibold tracking-tight">{source.title}</h1>
-        {source.url ? (
-          <a
-            href={source.url}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            {source.url} <ExternalLink className="h-3 w-3" />
-          </a>
-        ) : null}
-        <SummaryBlock summary={source.summary} />
-        {(hasContent || sourceJournals.length > 0) && progress > 0 ? (
-          <div className="mt-3 h-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full bg-primary transition-all"
-              style={{ width: `${progress}%` }}
+      {/* Body — pick mode */}
+      <div className="pb-24 pt-6 md:pt-10">
+        {isTransient ? (
+          <div className="mx-auto max-w-3xl px-6">
+            <LoadingMode
+              source={source}
+              stuck={stuck}
+              kickError={kickError}
+              onRetry={retryFetch}
+              onForceJournal={() => {
+                setSource((prev) => ({
+                  ...prev,
+                  fetch_status: "failed",
+                  fetch_error: prev.fetch_error ?? "用户放弃等待",
+                }));
+              }}
             />
           </div>
-        ) : null}
+        ) : hasContent && view === "iframe" && source.url ? (
+          <div className="mx-auto max-w-[1200px] px-6">
+            <IframeMode
+              slug={slug}
+              source={source}
+              journals={sourceJournals}
+              onAddJournal={addSourceJournal}
+              onRemoveJournal={removeSourceJournal}
+            />
+          </div>
+        ) : hasContent ? (
+          <MarkdownMode
+            source={source}
+            highlights={highlights}
+            ranges={ranges}
+            activeHighlightId={activeHighlightId}
+            setActiveHighlightId={setActiveHighlightId}
+            onSelectionInside={onSelectionInside}
+            onProgress={updateProgress}
+            onDeleteHighlight={removeHighlight}
+            onPromoteHighlight={promoteHighlightToJournal}
+          />
+        ) : (
+          <div className="mx-auto max-w-2xl px-6">
+            <NoContentMode
+              source={source}
+              slug={slug}
+              journals={sourceJournals}
+              busy={busy}
+              onRetryFetch={retryFetch}
+              onOpenPaste={() => setPasteOpen(true)}
+              onOpenPdf={() => setPdfOpen(true)}
+              onAddJournal={addSourceJournal}
+              onRemoveJournal={removeSourceJournal}
+            />
+          </div>
+        )}
       </div>
-
-      {/* Body — pick mode */}
-      {isTransient ? (
-        <LoadingMode
-          source={source}
-          stuck={stuck}
-          kickError={kickError}
-          onRetry={retryFetch}
-          onForceJournal={() => {
-            // Let the user bail out of the loader without waiting — flip the
-            // local view to NoContentMode by marking the source failed
-            // locally. The server row still reflects reality.
-            setSource((prev) => ({
-              ...prev,
-              fetch_status: "failed",
-              fetch_error: prev.fetch_error ?? "用户放弃等待",
-            }));
-          }}
-        />
-      ) : hasContent && view === "iframe" && source.url ? (
-        <IframeMode
-          slug={slug}
-          source={source}
-          journals={sourceJournals}
-          onAddJournal={addSourceJournal}
-          onRemoveJournal={removeSourceJournal}
-        />
-      ) : hasContent ? (
-        <MarkdownMode
-          source={source}
-          highlights={highlights}
-          ranges={ranges}
-          activeHighlightId={activeHighlightId}
-          setActiveHighlightId={setActiveHighlightId}
-          onSelectionInside={onSelectionInside}
-          onProgress={updateProgress}
-          onDeleteHighlight={removeHighlight}
-          onPromoteHighlight={promoteHighlightToJournal}
-        />
-      ) : (
-        <NoContentMode
-          source={source}
-          slug={slug}
-          journals={sourceJournals}
-          busy={busy}
-          onRetryFetch={retryFetch}
-          onOpenPaste={() => setPasteOpen(true)}
-          onOpenPdf={() => setPdfOpen(true)}
-          onAddJournal={addSourceJournal}
-          onRemoveJournal={removeSourceJournal}
-        />
-      )}
 
       {/* Floating toolbar only appears in markdown mode via its selection events */}
       {toolbar ? (
@@ -637,8 +680,6 @@ function MarkdownMode({
   const markdown = source.raw_content ?? "";
   const pages = React.useMemo(() => paginateMarkdown(markdown), [markdown]);
 
-  // Restore page from URL (?page=N 1-indexed), otherwise from progress. Keep
-  // the index clamped so stale links don't crash the reader.
   const [currentPage, setCurrentPage] = React.useState<number>(() => {
     if (typeof window === "undefined") return 0;
     const sp = new URLSearchParams(window.location.search);
@@ -646,7 +687,6 @@ function MarkdownMode({
     if (Number.isFinite(fromUrl) && fromUrl >= 1) {
       return Math.min(pages.length - 1, Math.max(0, fromUrl - 1));
     }
-    // Derive initial page from saved reading_progress.
     if (source.reading_progress > 0 && source.reading_progress < 100) {
       return Math.min(
         pages.length - 1,
@@ -655,11 +695,12 @@ function MarkdownMode({
     }
     return 0;
   });
+  const [navDirection, setNavDirection] = React.useState<"forward" | "backward">("forward");
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
   const pageCount = pages.length;
   const page = pages[Math.min(currentPage, pageCount - 1)];
 
-  // Persist progress + URL ?page= when turning pages.
   React.useEffect(() => {
     if (pageCount === 0) return;
     const pct = Math.round(((currentPage + 1) / pageCount) * 100);
@@ -669,21 +710,38 @@ function MarkdownMode({
     url.searchParams.set("page", String(currentPage + 1));
     window.history.replaceState(null, "", url.toString());
 
-    // Scroll to top of the reader for a clean page-turn feel.
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    // Jump to top instantly; the fade-in animation gives the page-turn feel.
+    window.scrollTo({ top: 0, behavior: "auto" });
   }, [currentPage, pageCount, onProgress]);
 
   const goPrev = React.useCallback(() => {
-    setCurrentPage((p) => Math.max(0, p - 1));
+    setCurrentPage((p) => {
+      if (p <= 0) return p;
+      setNavDirection("backward");
+      return p - 1;
+    });
   }, []);
   const goNext = React.useCallback(() => {
-    setCurrentPage((p) => Math.min(pageCount - 1, p + 1));
+    setCurrentPage((p) => {
+      if (p >= pageCount - 1) return p;
+      setNavDirection("forward");
+      return p + 1;
+    });
   }, [pageCount]);
+  const jumpPage = React.useCallback(
+    (n: number) => {
+      setCurrentPage((p) => {
+        const clamped = Math.max(0, Math.min(pageCount - 1, n));
+        setNavDirection(clamped > p ? "forward" : "backward");
+        return clamped;
+      });
+    },
+    [pageCount]
+  );
 
   // Keyboard navigation.
   React.useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      // Ignore when the user is typing inside an input / textarea / contenteditable.
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -705,19 +763,32 @@ function MarkdownMode({
     return () => document.removeEventListener("keydown", onKey);
   }, [goPrev, goNext]);
 
-  // Clicking a highlight in the sidebar should jump to the page containing it.
+  // Click hotspot: left half = prev, right half = next. Skip when the user
+  // is making a text selection so highlight flow isn't hijacked.
+  function onLeftZoneClick(e: React.MouseEvent) {
+    const sel = window.getSelection();
+    if (sel && sel.toString().length > 0) return;
+    e.preventDefault();
+    goPrev();
+  }
+  function onRightZoneClick(e: React.MouseEvent) {
+    const sel = window.getSelection();
+    if (sel && sel.toString().length > 0) return;
+    e.preventDefault();
+    goNext();
+  }
+
   const jumpToHighlight = React.useCallback(
     (id: string) => {
       setActiveHighlightId(id);
       const h = highlights.find((x) => x.id === id);
       if (!h) return;
       const target = pageOfOffset(pages, h.start_offset);
-      if (target !== currentPage) setCurrentPage(target);
+      if (target !== currentPage) jumpPage(target);
     },
-    [highlights, pages, currentPage, setActiveHighlightId]
+    [highlights, pages, currentPage, jumpPage, setActiveHighlightId]
   );
 
-  // Count highlights that live on the currently-visible page (for sidebar hint).
   const highlightsOnPage = React.useMemo(
     () =>
       highlights.filter((h) => h.end_offset > page.start && h.start_offset < page.end)
@@ -725,10 +796,39 @@ function MarkdownMode({
     [highlights, page.start, page.end]
   );
 
+  const isFirstPage = currentPage === 0;
+
   return (
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr),320px]">
-      <div className="min-w-0 space-y-4">
-        <div className="rounded-lg border border-border/60 bg-card/20 px-8 py-10">
+    <>
+      {/* Reader column — centered, tap-to-turn hotspots on outer edges. */}
+      <div className="relative mx-auto w-full max-w-3xl px-4 md:px-12">
+        {/* Invisible left/right tap zones (only in the outer padding). Don't
+            cover the prose column so text selection still works inside. */}
+        <button
+          type="button"
+          aria-label="上一页"
+          className="reader-tap-zone left"
+          onClick={onLeftZoneClick}
+          disabled={currentPage === 0}
+        />
+        <button
+          type="button"
+          aria-label="下一页"
+          className="reader-tap-zone right"
+          onClick={onRightZoneClick}
+          disabled={currentPage >= pageCount - 1}
+        />
+
+        {isFirstPage ? <ReaderMetaCard source={source} /> : null}
+
+        <div
+          key={currentPage}
+          className={
+            navDirection === "forward"
+              ? "reader-page-enter-forward"
+              : "reader-page-enter-backward"
+          }
+        >
           <MarkdownReader
             markdown={page.body}
             pageStart={page.start}
@@ -739,45 +839,122 @@ function MarkdownMode({
             onSelect={onSelectionInside}
           />
         </div>
-
-        <PageControls
-          currentPage={currentPage}
-          pageCount={pageCount}
-          onPrev={goPrev}
-          onNext={goNext}
-          onJump={setCurrentPage}
-        />
       </div>
 
-      <aside className="lg:sticky lg:top-4 lg:h-fit">
-        <HighlightSidebar
-          highlights={highlights}
-          activeId={activeHighlightId}
-          highlightsOnPage={highlightsOnPage}
-          onClickItem={jumpToHighlight}
-          onDelete={onDeleteHighlight}
-          onPromote={onPromoteHighlight}
-        />
-      </aside>
+      {/* Bottom control bar: sticky, progress + page nav + sidebar toggle */}
+      <div className="fixed bottom-0 left-0 right-0 z-20 pointer-events-none">
+        <div className="pointer-events-auto mx-auto flex max-w-3xl items-center gap-3 px-4 pb-4">
+          <BottomBar
+            currentPage={currentPage}
+            pageCount={pageCount}
+            onPrev={goPrev}
+            onNext={goNext}
+            onJump={jumpPage}
+            onToggleSidebar={() => setSidebarOpen((v) => !v)}
+            highlightCount={highlights.length}
+            sidebarOpen={sidebarOpen}
+          />
+        </div>
+      </div>
+
+      {/* Highlight sidebar drawer — slides in from the right. */}
+      {sidebarOpen ? (
+        <div className="fixed inset-0 z-40 flex justify-end">
+          <button
+            aria-label="关闭"
+            className="flex-1 bg-black/40 backdrop-blur-[1px]"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <aside
+            className="flex w-full max-w-sm flex-col border-l border-border/60 bg-background p-4 shadow-2xl"
+            style={{ background: "var(--reader-bg)", color: "var(--reader-fg)" }}
+          >
+            <HighlightSidebar
+              highlights={highlights}
+              activeId={activeHighlightId}
+              highlightsOnPage={highlightsOnPage}
+              onClickItem={(id) => {
+                jumpToHighlight(id);
+                setSidebarOpen(false);
+              }}
+              onDelete={onDeleteHighlight}
+              onPromote={onPromoteHighlight}
+            />
+          </aside>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Metadata card shown only on page 1 — type/author/pub_date, title repeats
+ * here (the sticky header also shows it), url + summary + key claims.
+ */
+function ReaderMetaCard({ source }: { source: Source }) {
+  const typeLabel =
+    source.resource_type === "consumable"
+      ? "可在线读"
+      : source.resource_type === "external"
+        ? "需外部看"
+        : "实体书";
+  return (
+    <div className="mx-auto mb-10 max-w-[720px] border-b border-[color-mix(in_srgb,var(--reader-fg)_10%,transparent)] pb-8">
+      <div
+        className="flex flex-wrap items-center gap-2 text-xs"
+        style={{ color: "var(--reader-muted)" }}
+      >
+        <span
+          className="rounded px-1.5 py-0.5"
+          style={{ background: "color-mix(in srgb, var(--reader-fg) 8%, transparent)" }}
+        >
+          {typeLabel}
+        </span>
+        {source.author ? <span>{source.author}</span> : null}
+        {source.pub_date ? <span>· {source.pub_date}</span> : null}
+      </div>
+      <h1
+        className="mt-3 text-3xl font-semibold tracking-tight"
+        style={{ color: "var(--reader-fg)" }}
+      >
+        {source.title}
+      </h1>
+      {source.url ? (
+        <a
+          href={source.url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-2 inline-flex items-center gap-1 truncate text-xs underline underline-offset-2 opacity-70 hover:opacity-100"
+          style={{ color: "var(--reader-muted)" }}
+        >
+          {source.url} <ExternalLink className="h-3 w-3" />
+        </a>
+      ) : null}
+      <SummaryBlock summary={source.summary} />
     </div>
   );
 }
 
-function PageControls({
+function BottomBar({
   currentPage,
   pageCount,
   onPrev,
   onNext,
   onJump,
+  onToggleSidebar,
+  highlightCount,
+  sidebarOpen,
 }: {
   currentPage: number;
   pageCount: number;
   onPrev: () => void;
   onNext: () => void;
   onJump: (p: number) => void;
+  onToggleSidebar: () => void;
+  highlightCount: number;
+  sidebarOpen: boolean;
 }) {
   const [jumpValue, setJumpValue] = React.useState("");
-
   function submitJump(e: React.FormEvent) {
     e.preventDefault();
     const n = Number(jumpValue);
@@ -787,43 +964,122 @@ function PageControls({
     }
   }
 
-  if (pageCount <= 1) return null;
+  const pct = pageCount === 0 ? 0 : Math.round(((currentPage + 1) / pageCount) * 100);
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/30 px-4 py-2 text-sm">
+    <div
+      className="flex w-full items-center gap-3 rounded-full border px-3 py-2 text-xs shadow-lg backdrop-blur"
+      style={{
+        background: "color-mix(in srgb, var(--reader-bg) 80%, transparent)",
+        borderColor: "color-mix(in srgb, var(--reader-fg) 15%, transparent)",
+        color: "var(--reader-fg)",
+      }}
+    >
       <button
         onClick={onPrev}
         disabled={currentPage === 0}
-        className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        className="inline-flex items-center gap-1 rounded px-2 py-1 opacity-70 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+        aria-label="上一页"
       >
-        ← 上一页
+        <ChevronLeft className="h-4 w-4" />
       </button>
 
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <span>
-          第 <span className="font-medium text-foreground tabular-nums">{currentPage + 1}</span> / {pageCount} 页
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <div
+          className="h-1 flex-1 overflow-hidden rounded-full"
+          style={{ background: "color-mix(in srgb, var(--reader-fg) 12%, transparent)" }}
+        >
+          <div
+            className="h-full rounded-full transition-all duration-300"
+            style={{
+              width: `${pct}%`,
+              background:
+                "linear-gradient(90deg, hsl(262 83% 66%) 0%, hsl(280 70% 62%) 100%)",
+            }}
+          />
+        </div>
+        <span className="tabular-nums opacity-70">
+          <span style={{ color: "var(--reader-fg)" }}>{currentPage + 1}</span> / {pageCount}
         </span>
-        <form onSubmit={submitJump} className="flex items-center gap-1">
+        <form onSubmit={submitJump} className="hidden sm:block">
           <input
             type="text"
             value={jumpValue}
             onChange={(e) => setJumpValue(e.target.value)}
-            placeholder="跳到"
-            className="w-14 rounded border border-border bg-background px-1.5 py-0.5 text-center tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="跳"
+            className="w-10 rounded border bg-transparent px-1.5 py-0.5 text-center tabular-nums focus:outline-none"
+            style={{
+              borderColor: "color-mix(in srgb, var(--reader-fg) 20%, transparent)",
+              color: "var(--reader-fg)",
+            }}
           />
         </form>
-        <span className="text-[10px] text-muted-foreground/60">
-          ← → 翻页
-        </span>
       </div>
+
+      <button
+        onClick={onToggleSidebar}
+        className={cn(
+          "inline-flex items-center gap-1 rounded px-2 py-1 opacity-70 transition-opacity hover:opacity-100",
+          sidebarOpen && "opacity-100"
+        )}
+        aria-label="高亮列表"
+        title="高亮列表"
+      >
+        <Sparkles className="h-4 w-4" />
+        {highlightCount > 0 ? (
+          <span className="tabular-nums">{highlightCount}</span>
+        ) : null}
+      </button>
 
       <button
         onClick={onNext}
         disabled={currentPage >= pageCount - 1}
-        className="inline-flex items-center gap-1 rounded px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        className="inline-flex items-center gap-1 rounded px-2 py-1 opacity-70 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-30"
+        aria-label="下一页"
       >
-        下一页 →
+        <ChevronRight className="h-4 w-4" />
       </button>
+    </div>
+  );
+}
+
+function ThemePicker({
+  value,
+  onChange,
+}: {
+  value: ReaderTheme;
+  onChange: (t: ReaderTheme) => void;
+}) {
+  const options: Array<{ v: ReaderTheme; label: string; swatch: string }> = [
+    { v: "dark", label: "深色", swatch: "#0a0a0a" },
+    { v: "midnight", label: "夜空", swatch: "#10131c" },
+    { v: "sepia", label: "护眼", swatch: "#f4ecd8" },
+    { v: "light", label: "浅色", swatch: "#fafafa" },
+  ];
+  return (
+    <div
+      className="inline-flex items-center gap-0.5 rounded-full border px-1 py-0.5 text-[10px]"
+      style={{
+        borderColor: "color-mix(in srgb, var(--reader-fg) 20%, transparent)",
+      }}
+      role="radiogroup"
+      aria-label="阅读主题"
+    >
+      {options.map((o) => (
+        <button
+          key={o.v}
+          onClick={() => onChange(o.v)}
+          className={cn(
+            "inline-flex h-5 w-5 items-center justify-center rounded-full transition-all",
+            value === o.v ? "ring-2 ring-primary" : "opacity-70 hover:opacity-100"
+          )}
+          style={{ background: o.swatch }}
+          title={o.label}
+          aria-label={o.label}
+          aria-checked={value === o.v}
+          role="radio"
+        />
+      ))}
     </div>
   );
 }
@@ -995,17 +1251,31 @@ function NoContentMode({
 function SummaryBlock({ summary }: { summary: SourceSummary }) {
   if (!summary?.tl_dr && !summary?.why_relevant) return null;
   return (
-    <div className="mt-3 space-y-2">
+    <div className="mt-4 space-y-2.5">
       {summary.why_relevant ? (
-        <div className="rounded bg-primary/10 px-2 py-1.5 text-xs text-primary/90">
+        <div
+          className="rounded px-3 py-2 text-sm"
+          style={{
+            background: "color-mix(in srgb, hsl(262 83% 66%) 12%, transparent)",
+            color: "color-mix(in srgb, var(--reader-fg) 95%, hsl(262 83% 66%))",
+          }}
+        >
           💡 {summary.why_relevant}
         </div>
       ) : null}
       {summary.tl_dr ? (
-        <p className="text-sm leading-relaxed text-foreground/85">{summary.tl_dr}</p>
+        <p
+          className="text-sm leading-relaxed"
+          style={{ color: "color-mix(in srgb, var(--reader-fg) 85%, transparent)" }}
+        >
+          {summary.tl_dr}
+        </p>
       ) : null}
       {summary.key_claims && summary.key_claims.length > 0 ? (
-        <ul className="list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
+        <ul
+          className="list-disc space-y-0.5 pl-5 text-sm"
+          style={{ color: "var(--reader-muted)" }}
+        >
           {summary.key_claims.slice(0, 5).map((c, i) => (
             <li key={i}>{c}</li>
           ))}

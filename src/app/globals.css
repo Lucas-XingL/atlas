@@ -94,3 +94,140 @@
 .prose-atlas pre  { @apply p-4 my-3 rounded-md bg-muted overflow-x-auto; }
 .prose-atlas pre code { @apply bg-transparent p-0; }
 .prose-atlas blockquote { @apply border-l-2 border-primary pl-4 my-3 text-muted-foreground italic; }
+
+/* ------------------------------------------------------------
+ * Reader mode typography + themes
+ *
+ * .reader-surface wraps the entire reader shell; .reader-prose is the
+ * column holding the book page. Themes are scoped via [data-reader-theme]
+ * on .reader-surface so the rest of the app stays on the dark palette
+ * regardless of what reading theme the user chose.
+ *
+ * Variables (override per theme):
+ *   --reader-bg:    page background
+ *   --reader-fg:    primary text color
+ *   --reader-muted: secondary / metadata text
+ *   --reader-hl:    highlight background
+ * ------------------------------------------------------------ */
+
+.reader-surface {
+  --reader-bg: hsl(0 0% 4%);
+  --reader-fg: hsl(0 0% 96%);
+  --reader-muted: hsl(0 0% 63%);
+  --reader-hl: rgba(139, 92, 246, 0.28);
+  --reader-hl-active: rgba(139, 92, 246, 0.45);
+  background: var(--reader-bg);
+  color: var(--reader-fg);
+}
+
+.reader-surface[data-reader-theme="sepia"] {
+  --reader-bg: #f4ecd8;
+  --reader-fg: #3b2e1e;
+  --reader-muted: #7a6b55;
+  --reader-hl: rgba(139, 92, 246, 0.22);
+  --reader-hl-active: rgba(139, 92, 246, 0.38);
+}
+.reader-surface[data-reader-theme="light"] {
+  --reader-bg: hsl(0 0% 99%);
+  --reader-fg: hsl(240 10% 10%);
+  --reader-muted: hsl(240 4% 40%);
+  --reader-hl: rgba(139, 92, 246, 0.20);
+  --reader-hl-active: rgba(139, 92, 246, 0.38);
+}
+.reader-surface[data-reader-theme="midnight"] {
+  --reader-bg: hsl(240 12% 6%);
+  --reader-fg: hsl(220 20% 90%);
+  --reader-muted: hsl(220 10% 58%);
+  --reader-hl: rgba(139, 92, 246, 0.32);
+  --reader-hl-active: rgba(139, 92, 246, 0.5);
+}
+
+.reader-prose {
+  font-size: 17.5px;
+  line-height: 1.88;
+  letter-spacing: 0.015em;
+  color: var(--reader-fg);
+  max-width: 720px;
+  margin: 0 auto;
+  font-feature-settings: "cv11", "ss01";
+}
+.reader-prose p { margin: 1.15em 0; }
+.reader-prose h1 { font-size: 1.7em; font-weight: 600; margin: 1.6em 0 0.7em; line-height: 1.35; }
+.reader-prose h2 { font-size: 1.35em; font-weight: 600; margin: 1.5em 0 0.6em; line-height: 1.4; }
+.reader-prose h3 { font-size: 1.12em; font-weight: 600; margin: 1.3em 0 0.5em; }
+.reader-prose ul, .reader-prose ol { margin: 1em 0; padding-left: 1.5em; }
+.reader-prose li { margin: 0.4em 0; }
+.reader-prose a { color: hsl(262 83% 66%); text-decoration: underline; text-underline-offset: 2px; }
+.reader-prose blockquote {
+  border-left: 3px solid var(--reader-muted);
+  padding-left: 1em;
+  margin: 1.2em 0;
+  color: var(--reader-muted);
+  font-style: italic;
+}
+.reader-prose code {
+  background: color-mix(in srgb, var(--reader-fg) 8%, transparent);
+  color: var(--reader-fg);
+  padding: 0.08em 0.35em;
+  border-radius: 3px;
+  font-size: 0.9em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.reader-prose pre {
+  background: color-mix(in srgb, var(--reader-fg) 8%, transparent);
+  padding: 1em;
+  margin: 1.2em 0;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.reader-prose pre code { background: transparent; padding: 0; }
+.reader-prose img { max-width: 100%; border-radius: 4px; margin: 1em 0; }
+.reader-prose hr {
+  border: none;
+  border-top: 1px solid color-mix(in srgb, var(--reader-fg) 15%, transparent);
+  margin: 2em 0;
+}
+
+/* Highlights painted by markdown-reader.tsx via <mark data-hl-id> */
+.reader-prose mark[data-hl-id] {
+  background: var(--reader-hl);
+  border-radius: 2px;
+  padding: 0 1px;
+  color: inherit;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.reader-prose mark[data-hl-id]:hover,
+.reader-prose mark[data-hl-id][data-hl-active="true"] {
+  background: var(--reader-hl-active);
+}
+
+/* Fade+slide animation for page turns */
+@keyframes reader-page-in-forward {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes reader-page-in-backward {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.reader-page-enter-forward { animation: reader-page-in-forward 220ms ease-out; }
+.reader-page-enter-backward { animation: reader-page-in-backward 220ms ease-out; }
+
+/* Click-to-turn invisible hotspots */
+.reader-tap-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10%;
+  z-index: 5;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+@media (min-width: 768px) {
+  .reader-tap-zone { width: 18%; }
+}
+.reader-tap-zone.left { left: 0; }
+.reader-tap-zone.right { right: 0; }
+.reader-tap-zone:disabled { cursor: default; }
