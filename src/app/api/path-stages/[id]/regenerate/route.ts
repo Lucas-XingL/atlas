@@ -3,8 +3,6 @@ import { z } from "zod";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { resolveLlmConfig } from "@/lib/ai/resolve-config";
 import { generateStageResources } from "@/lib/ai/path-generator";
-import { backfillResourceUrls } from "@/lib/ai/backfill-urls";
-import { preflightResourceUrls } from "@/lib/ai/preflight-urls";
 import type { Atlas } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -87,9 +85,6 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  const withUrls = await backfillResourceUrls(resources);
-  const checked = await preflightResourceUrls(withUrls);
-
   // Replace the stage's resources atomically (best-effort; RLS guards cascade)
   const { error: delErr } = await supabase
     .from("path_resources")
@@ -99,13 +94,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: `cleanup failed: ${delErr.message}` }, { status: 500 });
   }
 
-  const rows = checked.map((r, idx) => ({
+  // The generator no longer guesses URLs or resource types — user supplies
+  // the actual content at accept time.
+  const rows = resources.map((r, idx) => ({
     stage_id: stage.id,
     res_order: idx,
     tier: r.tier,
-    resource_type: r.resource_type,
+    resource_type: "consumable" as const,
     title: r.title,
-    url: r.url,
+    url: null,
     author: r.author,
     why_relevant: r.why_relevant,
     search_hint: r.search_hint,

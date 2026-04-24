@@ -3,8 +3,6 @@ import { createSupabaseServer } from "@/lib/supabase/server";
 import { decodeSlug } from "@/lib/slug";
 import { resolveLlmConfig } from "@/lib/ai/resolve-config";
 import { generateLearningPath } from "@/lib/ai/path-generator";
-import { backfillResourceUrls } from "@/lib/ai/backfill-urls";
-import { preflightResourceUrls } from "@/lib/ai/preflight-urls";
 import type { Atlas } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -89,15 +87,16 @@ export async function POST(_req: Request, { params }: { params: { slug: string }
 
     if (stage.resources.length === 0) continue;
 
-    const withUrls = await backfillResourceUrls(stage.resources);
-    const checked = await preflightResourceUrls(withUrls);
-    const resourceRows = checked.map((r, rIdx) => ({
+    // The path generator no longer proposes URLs or resource types — the
+    // user supplies the actual content when they click 开始读. Every
+    // row is persisted as a neutral manual-entry placeholder.
+    const resourceRows = stage.resources.map((r, rIdx) => ({
       stage_id: stageRow.id,
       res_order: rIdx,
       tier: r.tier,
-      resource_type: r.resource_type,
+      resource_type: "consumable" as const, // placeholder; user picks at accept
       title: r.title,
-      url: r.url,
+      url: null,
       author: r.author,
       why_relevant: r.why_relevant,
       search_hint: r.search_hint,

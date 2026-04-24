@@ -721,13 +721,10 @@ function IframeMode({
 
 function NoContentMode({
   source,
-  journals,
   busy,
   onRetryFetch,
   onOpenPaste,
   onOpenPdf,
-  onAddJournal,
-  onRemoveJournal,
 }: {
   source: Source;
   slug: string;
@@ -740,77 +737,71 @@ function NoContentMode({
   onRemoveJournal: (id: string) => Promise<void>;
 }) {
   const isFailed = source.fetch_status === "failed";
-  const canRetry = !!source.url && source.resource_type === "consumable";
+  const canRetry = !!source.url;
 
-  const hint =
-    source.resource_type === "physical"
-      ? "这是一本实体书 · 边读边把要点记进来，或上传 PDF 版本让 AI 一起解析。"
-      : source.resource_type === "external"
-        ? "这是需要外部观看的资源（视频/播客/付费文章）· 边看边记要点即可。"
-        : isFailed
-          ? `抓取失败${source.fetch_error ? `：${source.fetch_error}` : ""} · 可以重试，也可以直接用随记的方式读。`
-          : "这条源没有可抓取的正文 · 边读边记就够，或粘贴要点让 AI 帮你整理摘要。";
+  const hint = isFailed
+    ? `抓取失败${source.fetch_error ? `：${source.fetch_error}` : ""} · 换一种方式把内容放进来`
+    : "这条源还没有可用的正文 · 选一种方式提供内容";
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr),380px]">
-      {/* Left: guidance + recovery actions */}
-      <div className="min-w-0 space-y-4">
-        <div
-          className={cn(
-            "rounded-lg border p-5",
-            isFailed
-              ? "border-destructive/30 bg-destructive/5"
-              : "border-primary/20 bg-primary/5"
-          )}
-        >
-          <div className="flex items-start gap-3">
-            <PenLine className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <div className="min-w-0">
-              <div className="text-sm font-medium">
-                {isFailed ? "无法抓到正文" : "这条源不支持直接阅读"}
-              </div>
-              <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+    <div className="mx-auto max-w-2xl">
+      <div
+        className={cn(
+          "rounded-lg border p-8",
+          isFailed
+            ? "border-destructive/30 bg-destructive/5"
+            : "border-primary/20 bg-primary/5"
+        )}
+      >
+        <div className="flex items-start gap-3">
+          <PenLine className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+          <div className="min-w-0">
+            <div className="text-sm font-medium">
+              {isFailed ? "无法抓到正文" : "还没有正文可读"}
             </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {canRetry ? (
-              <Button size="sm" variant="outline" onClick={onRetryFetch} disabled={busy}>
-                {busy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                重试抓取
-              </Button>
-            ) : null}
-            <Button size="sm" variant="outline" onClick={onOpenPdf} disabled={busy}>
-              <Upload className="h-3.5 w-3.5" /> 上传 PDF
-            </Button>
-            <Button size="sm" variant="outline" onClick={onOpenPaste} disabled={busy}>
-              <FileText className="h-3.5 w-3.5" /> 粘贴要点
-            </Button>
+            <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
           </div>
         </div>
-
-        {/* Inline journal input — large, the primary affordance */}
-        <div className="rounded-lg border border-border/60 bg-card/30 p-5">
-          <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            <PenLine className="h-3 w-3" /> 边读边记
-          </div>
-          <JournalComposer onSubmit={onAddJournal} placeholder="一次一条小想法 · Enter 换行，Cmd/Ctrl+Enter 保存" />
+        <div className="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {canRetry ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRetryFetch}
+              disabled={busy}
+              className="justify-start"
+            >
+              {busy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+              重试抓取
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onOpenPdf}
+            disabled={busy}
+            className="justify-start"
+          >
+            <Upload className="h-3.5 w-3.5" /> 上传 PDF
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onOpenPaste}
+            disabled={busy}
+            className="justify-start"
+          >
+            <FileText className="h-3.5 w-3.5" /> 粘贴正文
+          </Button>
         </div>
+        <p className="mt-5 text-[11px] text-muted-foreground">
+          提供内容后，你就可以在这里划线、随记、生成闪卡和知识库。
+        </p>
       </div>
-
-      {/* Right: journal list (same content as left composer's list, so user
-          sees history without scrolling away from composer). */}
-      <aside className="lg:sticky lg:top-4 lg:h-fit">
-        <JournalSidePanel
-          journals={journals}
-          onAdd={null}
-          onRemove={onRemoveJournal}
-          hint={`${journals.length} 条随记`}
-        />
-      </aside>
     </div>
   );
 }

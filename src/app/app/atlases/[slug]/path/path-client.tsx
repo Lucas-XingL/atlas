@@ -11,8 +11,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-  BookOpen,
-  ExternalLink,
   Loader2,
   Trash2,
   Search,
@@ -25,21 +23,14 @@ import {
   Undo2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { PdfUploadDialog } from "@/components/pdf-upload-dialog";
+import { StartReadingDialog } from "@/components/start-reading-dialog";
 import { StageRegenerateDialog } from "@/components/stage-regenerate-dialog";
 import type {
   LearningPath,
   PathResource,
   PathResourceUserStatus,
   PathStage,
-  ResourceType,
 } from "@/lib/types";
-
-const TYPE_META: Record<ResourceType, { label: string; icon: React.ReactNode }> = {
-  consumable: { label: "可在线读", icon: <BookOpen className="h-3 w-3" /> },
-  external: { label: "需外部看", icon: <ExternalLink className="h-3 w-3" /> },
-  physical: { label: "实体书", icon: <BookOpen className="h-3 w-3" /> },
-};
 
 const STATUS_META: Record<PathResourceUserStatus, { label: string; tone: string }> = {
   suggested: { label: "待开始", tone: "text-muted-foreground" },
@@ -273,8 +264,7 @@ function ResourceRow({
 }) {
   const router = useRouter();
   const [busy, setBusy] = React.useState(false);
-  const [pdfOpen, setPdfOpen] = React.useState(false);
-  const typeMeta = TYPE_META[r.resource_type];
+  const [dialogOpen, setDialogOpen] = React.useState(false);
   const statusMeta = STATUS_META[r.user_status];
   // If user_status says reading/accepted but we have no source_id, the source
   // was deleted from the reading list; call that out so the label doesn't lie.
@@ -284,32 +274,26 @@ function ResourceRow({
     ? { label: "source 已删", tone: "text-amber-400" }
     : statusMeta;
 
-  async function acceptAndReturnSourceId(): Promise<string> {
-    const res = await fetch(`/api/path-resources/${r.id}/accept`, { method: "POST" });
+  async function submitContent(
+    content:
+      | { kind: "url"; url: string }
+      | { kind: "pdf"; pdf_storage_path: string }
+      | { kind: "text"; text: string }
+  ): Promise<{ source_id: string; needs_pdf_ingest?: boolean }> {
+    const res = await fetch(`/api/path-resources/${r.id}/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
     const j = await res.json();
-    if (!res.ok || !j.source_id) throw new Error(j.error ?? "创建 source 失败");
-    return j.source_id as string;
+    if (!res.ok || !j.source_id) {
+      throw new Error(j.error ?? `HTTP ${res.status}`);
+    }
+    return { source_id: j.source_id, needs_pdf_ingest: j.needs_pdf_ingest };
   }
 
-  async function startReading() {
-    if (r.resource_type === "physical") {
-      setPdfOpen(true);
-      return;
-    }
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/path-resources/${r.id}/accept`, { method: "POST" });
-      const j = await res.json();
-      if (!res.ok || !j.source_id) {
-        alert(`开始失败: ${j.error ?? "未知错误"}`);
-        onChange();
-        return;
-      }
-      // Go straight into the reader — the page handles fetch_status=pending.
-      router.push(`/app/atlases/${slug}/reading/${j.source_id}`);
-    } finally {
-      setBusy(false);
-    }
+  function startReading() {
+    setDialogOpen(true);
   }
 
   async function viewInReader() {
@@ -383,10 +367,6 @@ function ResourceRow({
           <span className={cn("text-sm font-medium", isSkipped && "line-through")}>
             {r.title}
           </span>
-          <span className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {typeMeta.icon}
-            {typeMeta.label}
-          </span>
           <span className={cn("text-[11px]", displayStatus.tone)}>· {displayStatus.label}</span>
         </div>
         {r.author ? (
@@ -395,20 +375,10 @@ function ResourceRow({
         {r.why_relevant ? (
           <div className="mt-1.5 text-xs text-muted-foreground">💡 {r.why_relevant}</div>
         ) : null}
-        {!r.url && r.search_hint ? (
+        {r.search_hint ? (
           <div className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground">
             <Search className="h-3 w-3" /> {r.search_hint}
           </div>
-        ) : null}
-        {r.url ? (
-          <a
-            href={r.url}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 block truncate text-[11px] text-primary hover:underline"
-          >
-            {r.url}
-          </a>
         ) : null}
       </div>
 
@@ -423,18 +393,17 @@ function ResourceRow({
         />
       </div>
     </div>
-    {r.resource_type === "physical" ? (
-      <PdfUploadDialog
-        open={pdfOpen}
-        resourceTitle={r.title}
-        onClose={() => setPdfOpen(false)}
-        createSource={acceptAndReturnSourceId}
-        onIngested={(sourceId) => {
-          setPdfOpen(false);
-          router.push(`/app/atlases/${slug}/reading/${sourceId}`);
-        }}
-      />
-    ) : null}
+    <StartReadingDialog
+      open={dialogOpen}
+      resourceTitle={r.title}
+      searchHint={r.search_hint}
+      onClose={() => setDialogOpen(false)}
+      submitContent={submitContent}
+      onReady={(sourceId) => {
+        setDialogOpen(false);
+        router.push(`/app/atlases/${slug}/reading/${sourceId}`);
+      }}
+    />
     </>
   );
 }
