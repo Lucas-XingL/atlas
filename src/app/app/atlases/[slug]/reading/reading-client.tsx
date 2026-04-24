@@ -2,12 +2,10 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatRelative, cn } from "@/lib/utils";
-import { BookOpen, Radio, PenLine, Sparkles, ExternalLink, Network } from "lucide-react";
+import { BookOpen, Radio, PenLine, ExternalLink, Network, Sparkles } from "lucide-react";
 import Link from "next/link";
 import type { Source, SourceOrigin } from "@/lib/types";
 
@@ -113,7 +111,7 @@ export function ReadingClient({
 
       {pendingCount > 0 ? (
         <div className="rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-foreground/85">
-          你有 {pendingCount} 条源等你粘贴正文 · 向下滚动找到「待粘贴正文」的卡片
+          你有 {pendingCount} 条未开始的源 · 点卡片进详情页边读边记
         </div>
       ) : null}
 
@@ -192,36 +190,23 @@ function SourceItem({
   slug: string;
   onChange: () => void;
 }) {
-  const [pasteText, setPasteText] = React.useState("");
   const [busy, setBusy] = React.useState(false);
   const [ingesting, setIngesting] = React.useState(false);
 
-  async function remove() {
+  async function remove(e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
     if (!confirm("从阅读清单删除这条？")) return;
     await fetch(`/api/sources/${source.id}`, { method: "DELETE" });
     onChange();
   }
 
-  async function retry() {
+  async function retry(e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
     setBusy(true);
     try {
       await fetch(`/api/sources/${source.id}/process`, { method: "POST" });
-      onChange();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitPaste() {
-    if (pasteText.trim().length < 20) return;
-    setBusy(true);
-    try {
-      await fetch(`/api/sources/${source.id}/paste`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: pasteText, title: source.title }),
-      });
-      setPasteText("");
       onChange();
     } finally {
       setBusy(false);
@@ -244,144 +229,136 @@ function SourceItem({
   }
 
   const originMeta = ORIGIN_META[source.origin];
+  const detailHref = `/app/atlases/${slug}/reading/${source.id}`;
 
+  // Everything about this card is now about getting the user to the reader
+  // detail page. The detail page owns the modal-like flows (paste, retry,
+  // journal-only). We keep summary / highlight metadata as glanceable context.
   return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge source={source} />
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px]",
-                  originMeta.tone
-                )}
-              >
-                {originMeta.icon}
-                {originMeta.label}
-              </span>
-              <span className="text-[11px] text-muted-foreground">
-                {formatRelative(source.ingested_at)}
-              </span>
-            </div>
-            <div className="mt-2">
-              {source.fetch_status === "ready" && source.raw_content ? (
-                <Link
-                  href={`/app/atlases/${slug}/reading/${source.id}`}
-                  className="text-base font-semibold hover:text-primary"
+    <Link href={detailHref} className="block">
+      <Card className="transition-colors hover:border-foreground/30">
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge source={source} />
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 text-[10px]",
+                    originMeta.tone
+                  )}
                 >
-                  {source.title}
-                </Link>
-              ) : (
-                <span className="text-base font-semibold">{source.title}</span>
-              )}
-            </div>
-            {source.url ? (
-              <a
-                href={source.url}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-1 inline-flex items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground"
-              >
-                {source.url}
-                <ExternalLink className="h-3 w-3 shrink-0" />
-              </a>
-            ) : null}
-            {source.fetch_status === "ready" && source.reading_progress > 0 ? (
-              <div className="mt-2 flex items-center gap-2">
-                <div className="h-1 flex-1 max-w-48 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full bg-primary transition-all"
-                    style={{ width: `${source.reading_progress}%` }}
-                  />
-                </div>
-                <span className="text-[11px] tabular-nums text-muted-foreground">
-                  {source.reading_progress}%
+                  {originMeta.icon}
+                  {originMeta.label}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  {formatRelative(source.ingested_at)}
                 </span>
               </div>
-            ) : null}
-
-            {/* Wiki ingest status */}
-            {source.fetch_status === "ready" ? (
-              <WikiIngestBadge
-                source={source}
-                slug={slug}
-                onIngest={ingestWiki}
-                ingesting={ingesting}
-              />
-            ) : null}
-            {source.summary?.why_relevant ? (
-              <div className="mt-2 rounded bg-primary/10 px-2 py-1 text-xs text-primary/90">
-                💡 {source.summary.why_relevant}
+              <div className="mt-2">
+                <span className="text-base font-semibold hover:text-primary">
+                  {source.title}
+                </span>
               </div>
-            ) : null}
-            {source.summary?.tl_dr ? (
-              <p className="mt-3 text-sm leading-relaxed text-foreground/90">
-                {source.summary.tl_dr}
-              </p>
-            ) : null}
-            {source.summary?.key_claims && source.summary.key_claims.length > 0 ? (
-              <ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground">
-                {source.summary.key_claims.slice(0, 3).map((c, i) => (
-                  <li key={i}>{c}</li>
-                ))}
-              </ul>
-            ) : null}
+              {source.url ? (
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="mt-1 inline-flex items-center gap-1 truncate text-xs text-muted-foreground hover:text-foreground"
+                >
+                  {source.url}
+                  <ExternalLink className="h-3 w-3 shrink-0" />
+                </a>
+              ) : null}
+              {source.fetch_status === "ready" && source.reading_progress > 0 ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="h-1 flex-1 max-w-48 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-primary transition-all"
+                      style={{ width: `${source.reading_progress}%` }}
+                    />
+                  </div>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">
+                    {source.reading_progress}%
+                  </span>
+                </div>
+              ) : null}
 
-            {/* Needs-paste state */}
-            {source.fetch_status === "pending" && !source.url ? (
-              <div className="mt-3 space-y-2">
-                <div className="rounded border border-primary/30 bg-primary/5 p-3 text-xs text-foreground/90">
+              {/* Wiki ingest status */}
+              {source.fetch_status === "ready" ? (
+                <WikiIngestBadge
+                  source={source}
+                  slug={slug}
+                  onIngest={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    ingestWiki();
+                  }}
+                  ingesting={ingesting}
+                />
+              ) : null}
+              {source.summary?.why_relevant ? (
+                <div className="mt-2 rounded bg-primary/10 px-2 py-1 text-xs text-primary/90">
+                  💡 {source.summary.why_relevant}
+                </div>
+              ) : null}
+              {source.summary?.tl_dr ? (
+                <p className="mt-3 text-sm leading-relaxed text-foreground/90">
+                  {source.summary.tl_dr}
+                </p>
+              ) : null}
+              {source.summary?.key_claims && source.summary.key_claims.length > 0 ? (
+                <ul className="mt-2 list-disc pl-5 text-sm text-muted-foreground">
+                  {source.summary.key_claims.slice(0, 3).map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {/* Actionable hint for non-ready states — all roads lead to the
+                  detail page, which handles paste / retry / journal-only. */}
+              {source.fetch_status === "pending" && !source.url ? (
+                <div className="mt-3 inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-2 py-1 text-xs text-primary">
                   {pasteHint(source.resource_type)}
                 </div>
-                <Textarea
-                  rows={6}
-                  placeholder="粘贴章节要点 / 核心观点 / 摘抄（≥20 字）..."
-                  value={pasteText}
-                  onChange={(e) => setPasteText(e.target.value)}
-                />
-                <Button
-                  size="sm"
-                  onClick={submitPaste}
-                  disabled={busy || pasteText.trim().length < 20}
-                >
-                  {busy ? "处理..." : "保存并生成摘要"}
-                </Button>
-              </div>
-            ) : null}
+              ) : null}
 
-            {source.fetch_status === "failed" && source.fetch_error ? (
-              <div className="mt-3 space-y-2">
-                <div className="rounded border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
-                  抓取失败：{source.fetch_error}
-                </div>
-                <div className="flex gap-2">
+              {source.fetch_status === "failed" && source.fetch_error ? (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <div className="rounded border border-destructive/30 bg-destructive/5 px-2 py-1 text-xs text-destructive">
+                    抓取失败：{source.fetch_error}
+                  </div>
                   {source.url ? (
-                    <Button size="sm" variant="outline" onClick={retry} disabled={busy}>
-                      {busy ? "..." : "重试"}
-                    </Button>
+                    <button
+                      onClick={retry}
+                      disabled={busy}
+                      className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground disabled:opacity-50"
+                    >
+                      {busy ? "..." : "重试抓取"}
+                    </button>
                   ) : null}
                 </div>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
+            <button
+              onClick={remove}
+              className="text-xs text-muted-foreground hover:text-destructive"
+            >
+              删除
+            </button>
           </div>
-          <button
-            onClick={remove}
-            className="text-xs text-muted-foreground hover:text-destructive"
-          >
-            删除
-          </button>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
 
 function StatusBadge({ source }: { source: Pick<Source, "fetch_status" | "resource_type" | "url"> }) {
-  const needsPaste = source.fetch_status === "pending" && !source.url;
-  if (needsPaste) {
-    return <Badge variant="default">待粘贴正文</Badge>;
+  const needsManual = source.fetch_status === "pending" && !source.url;
+  if (needsManual) {
+    return <Badge variant="default">未开始</Badge>;
   }
   const map: Record<Source["fetch_status"], { label: string; variant: "default" | "outline" | "success" }> = {
     pending: { label: "排队中", variant: "outline" },
@@ -396,12 +373,12 @@ function StatusBadge({ source }: { source: Pick<Source, "fetch_status" | "resour
 
 function pasteHint(type: Source["resource_type"]): string {
   if (type === "physical") {
-    return "📖 实体书 · 读完后把章节要点粘到这里，AI 会帮你整理成摘要 + 归档到知识库。无需粘整本，几句核心观点即可。";
+    return "📖 实体书 · 点进详情页边读边记";
   }
   if (type === "external") {
-    return "🎧 需外部消化（视频 / 播客 / 付费文章）· 看完后把要点粘过来，AI 会帮你整理。";
+    return "🎧 需外部消化 · 点进详情页边看边记";
   }
-  return "📝 这条源没有可抓取的 URL · 粘贴原文或要点，AI 会自动生成摘要。";
+  return "📝 点进详情页边读边记或粘贴要点";
 }
 
 function WikiIngestBadge({
@@ -412,7 +389,7 @@ function WikiIngestBadge({
 }: {
   source: Source;
   slug: string;
-  onIngest: () => void;
+  onIngest: (e: React.MouseEvent) => void;
   ingesting: boolean;
 }) {
   const isIngested = !!source.wiki_ingested_at;
@@ -423,6 +400,7 @@ function WikiIngestBadge({
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
         <Link
           href={`/app/atlases/${slug}/wiki?page=${pageSlug}`}
+          onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-emerald-400 hover:bg-emerald-500/20"
         >
           <Network className="h-3 w-3" />
@@ -440,7 +418,6 @@ function WikiIngestBadge({
   }
 
   if (source.status === "read") {
-    // Marked read but auto-ingest may still be running, or failed silently.
     return (
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
         <span className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-primary">
