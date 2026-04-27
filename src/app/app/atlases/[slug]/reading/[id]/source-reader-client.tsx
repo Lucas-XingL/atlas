@@ -711,18 +711,31 @@ function MarkdownMode({
   const pageCount = pages.length;
   const page = pages[Math.min(currentPage, pageCount - 1)];
 
+  // Stash onProgress in a ref so the page-turn effect below doesn't depend
+  // on the function identity (the parent recreates it every render). Without
+  // this, every scroll-driven setState in the parent would re-trigger the
+  // effect — including its window.scrollTo(0) — and the page would visibly
+  // bounce back to the top whenever the user tried to scroll.
+  const onProgressRef = React.useRef(onProgress);
+  React.useEffect(() => {
+    onProgressRef.current = onProgress;
+  }, [onProgress]);
+
+  // Side effects that should fire ONLY when the user actually turns the page:
+  //   - persist progress
+  //   - sync ?page= in the URL
+  //   - jump to top so the new page starts visible
   React.useEffect(() => {
     if (pageCount === 0) return;
     const pct = Math.round(((currentPage + 1) / pageCount) * 100);
-    onProgress(pct);
+    onProgressRef.current(pct);
 
     const url = new URL(window.location.href);
     url.searchParams.set("page", String(currentPage + 1));
     window.history.replaceState(null, "", url.toString());
 
-    // Jump to top instantly; the fade-in animation gives the page-turn feel.
     window.scrollTo({ top: 0, behavior: "auto" });
-  }, [currentPage, pageCount, onProgress]);
+  }, [currentPage, pageCount]);
 
   const goPrev = React.useCallback(() => {
     setCurrentPage((p) => {
