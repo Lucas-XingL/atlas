@@ -239,3 +239,18 @@
 .reader-tap-zone.left { left: 0; }
 .reader-tap-zone.right { right: 0; }
 .reader-tap-zone[data-disabled="true"] { cursor: default; pointer-events: none; }
+
+/* Theme-aware chip button used in the reader header (e.g. 标记已读). The
+ * standard <Button> uses global tokens which are dark-mode only; in the
+ * sepia/light reader themes that produced black-on-cream pills with no
+ * visible text. These styles consume the --reader-* vars so the affordance
+ * stays legible no matter which theme is active. */
+.reader-chip-button {
+  border-color: color-mix(in srgb, var(--reader-fg) 25%, transparent);
+  background: color-mix(in srgb, var(--reader-fg) 6%, transparent);
+  color: var(--reader-fg);
+}
+.reader-chip-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--reader-fg) 12%, transparent);
+  border-color: color-mix(in srgb, var(--reader-fg) 35%, transparent);
+}

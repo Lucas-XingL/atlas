@@ -467,18 +467,16 @@ export function SourceReaderClient({
           <ThemePicker value={readerTheme} onChange={changeTheme} />
           {hasContent || sourceJournals.length > 0 ? (
             progress < 100 ? (
-              <Button
-                size="sm"
-                variant="outline"
+              <button
                 onClick={markRead}
                 disabled={busy}
-                className="h-7"
+                className="reader-chip-button inline-flex h-7 items-center gap-1 rounded-md border px-2.5 text-xs transition-colors disabled:opacity-50"
               >
                 <Check className="h-3.5 w-3.5" />
                 标记已读
-              </Button>
+              </button>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+              <span className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-500">
                 <Check className="h-3 w-3" /> 已读完
               </span>
             )
